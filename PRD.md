@@ -106,6 +106,10 @@ deposit address and a QR for my own wallet. And during all of this, the network 
 | inputs | `spending_transaction_hash, recipient` (the t-address that funded a tx), `value` |
 | outputs | `transaction_hash, recipient, value, is_from_coinbase` |
 
+Observed data facts (verified in S1):
+- `input_total` / `output_total` are `\N` exactly when `input_count` / `output_count` is 0 (222,404 txs checked); normalized to 0.
+- Free downloads are ~100 KB/s and **one connection per IP**; a second concurrent request gets HTTP 402. The downloader is sequential and retries 402/429 with backoff.
+
 Ingest sits behind a `DataSource` interface so a `ZebraRpcSource` can be added later without touching anything else.
 
 ### 7.2 Event derivation rules (from the transparent side — does not trust `shielded_value_delta`)
@@ -234,7 +238,8 @@ You confirm ✅, then we move on. A failing check means we fix it in that sectio
 **Acceptance:**
 - [ ] Ingest 2026-09-28: DB row counts == file line counts − 1 for all 3 tables
 - [ ] Re-running the same day changes nothing (idempotent)
-- [ ] Full 90-day ingest completes in < 10 min; per-day counts table printed
+- [ ] Full 90-day ingest from the local cache completes in < 10 min; per-day counts table printed
+      (the one-time download is throttled by Blockchair to ~100 KB/s and one connection per IP — ~1 h for 90 days)
 - [ ] Parser unit tests: nulls, big values, malformed line rejected with a clear error
 
 ### S2 — Event derivation

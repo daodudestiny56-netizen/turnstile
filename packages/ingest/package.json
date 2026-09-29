@@ -1,0 +1,21 @@
+{
+  "name": "@turnstile/ingest",
+  "version": "0.0.0",
+  "description": "Chain data ingestion and boundary-event derivation for Turnstile.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@turnstile/core": "workspace:*"
+  }
+}

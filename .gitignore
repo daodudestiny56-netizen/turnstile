@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.env
+.env.*
+# downloaded chain data and local databases
+data/
+*.sqlite
+*.sqlite-*
+# private research artifacts
+*.local.json

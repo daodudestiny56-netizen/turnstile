@@ -1,0 +1,18 @@
+{
+  "name": "@turnstile/core",
+  "version": "0.0.0",
+  "description": "Boundary-leak scoring and exit planning for Zcash. Runs in browser and Node.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}

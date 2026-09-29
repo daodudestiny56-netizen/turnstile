@@ -90,6 +90,17 @@ export function totalField(row: TsvRow, totalColumn: string, countColumn: string
   return 0;
 }
 
+const HEX_PATTERN = /^(?:[0-9a-f]{2})*$/i;
+
+/** Byte length of a hex field; null or empty means 0 bytes. */
+export function hexBytesField(row: TsvRow, column: string): number {
+  const value = row[column] ?? "";
+  if (!HEX_PATTERN.test(value)) {
+    throw new RangeError(`column ${column}: expected hex bytes`);
+  }
+  return value.length / 2;
+}
+
 /** Required string field. */
 export function stringField(row: TsvRow, column: string): string {
   const value = row[column];

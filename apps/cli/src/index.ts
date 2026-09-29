@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { VERSION, formatZat, zecToZat } from "@turnstile/core";
+import { deriveCommand, eventsCommand } from "./events.js";
 import { countsCommand, ingestCommand } from "./ingest.js";
 
 const DEFAULT_DB = "data/turnstile.sqlite";
@@ -40,6 +41,24 @@ export function buildProgram(): Command {
     .description("Show per-day row counts in the local database.")
     .option("--db <path>", "SQLite database path", DEFAULT_DB)
     .action(countsCommand);
+
+  for (const [name, description, action] of [
+    ["derive", "Derive shield/deshield events from the ingested raw data.", deriveCommand],
+    [
+      "events",
+      "Report derived events and compare them with Blockchair's own figures.",
+      eventsCommand,
+    ],
+  ] as const) {
+    program
+      .command(name)
+      .description(description)
+      .option("--from <day>", "first UTC day, YYYY-MM-DD")
+      .option("--to <day>", "last UTC day, YYYY-MM-DD (default: yesterday)", yesterdayUtc())
+      .option("--days <n>", "number of days ending at --to (alternative to --from)")
+      .option("--db <path>", "SQLite database path", DEFAULT_DB)
+      .action(action);
+  }
 
   return program;
 }

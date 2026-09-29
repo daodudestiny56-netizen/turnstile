@@ -23,7 +23,7 @@ export const HEADERS: Record<TableName, string[]> = {
 
 /** Build one TSV line from a partial column map; unspecified columns get "0". */
 export function line(table: TableName, values: Record<string, string>): string {
-  return HEADERS[table].map((col) => values[col] ?? "0").join("\t");
+  return HEADERS[table].map((col) => values[col] ?? (col.endsWith("_hex") ? "" : "0")).join("	");
 }
 
 export function tsv(table: TableName, rows: Record<string, string>[]): string {
@@ -43,6 +43,7 @@ export function writeDump(cacheDir: string, table: TableName, day: string, conte
 export const TX_SHIELD = {
   block_id: "3498560",
   hash: "aa".repeat(32),
+  size: "5230",
   time: "2026-09-28 00:01:32",
   version: "5",
   is_coinbase: "0",

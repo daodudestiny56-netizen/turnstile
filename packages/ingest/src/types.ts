@@ -14,6 +14,8 @@ export interface TxRecord {
   outputTotal: number;
   /** Fee as reported by the source (unreliable for some tx versions — see PRD §2). */
   fee: number;
+  /** Serialized size in bytes; used to detect shielded components (see derive.ts). */
+  size: number;
   /** Source-reported net shielded flow; kept for comparison only, never trusted. */
   shieldedValueDelta: number | null;
 }
@@ -26,6 +28,8 @@ export interface InputRecord {
   recipient: string | null;
   value: number;
   isFromCoinbase: boolean;
+  /** Length of the spending scriptSig in bytes. */
+  scriptBytes: number;
 }
 
 /** A transparent output. */
@@ -36,6 +40,8 @@ export interface OutputRecord {
   recipient: string | null;
   value: number;
   isFromCoinbase: boolean;
+  /** Length of the output script (scriptPubKey) in bytes. */
+  scriptBytes: number;
 }
 
 export type TableName = "transactions" | "inputs" | "outputs";

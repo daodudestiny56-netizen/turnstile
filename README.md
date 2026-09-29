@@ -61,17 +61,25 @@ A tool that warns about leaks must not leak. These are hard requirements, and ea
 
 ## What we've found so far
 
-Building a trustworthy measurement meant checking public Zcash data line by line first. Three things
-surfaced before any matching was written:
+Building a trustworthy measurement meant checking public Zcash data line by line first. These surfaced
+before any matching was written; the details are in [docs/methodology.md](docs/methodology.md).
 
-1. **A major explorer under-reports shielded flows.** Blockchair's `shielded_value_delta` column reads `0`
-   for 1,488 of 7,186 non-coinbase transactions on 2026-09-28, mostly the newer v6 format, even when value
-   visibly left the shielded pool. Turnstile doesn't use that column: it derives every boundary crossing
-   from the transparent side of each transaction.
-2. **Public dumps repeat rows.** Across 90 days of Blockchair's outputs data, 118,086 lines are verbatim
+1. **A major explorer misses almost every shielded crossing.** Blockchair's `shielded_value_delta` only
+   reflects the older Sapling and Sprout pools. Over July–September 2026 it reports no movement for
+   **89.8%** of the 168,876 crossings Turnstile found: every one of them a v5 or v6 transaction, the versions
+   that carry the Orchard and Ironwood pools. For an Orchard shield it books the entire amount as the fee.
+   Turnstile never uses that column.
+2. **Crossings can be detected from structure alone.** A transaction's transparent part has an exact byte
+   size. Across 590,212 transactions, every purely transparent one has exactly 27 (v4), 23 (v5) or 24 (v6)
+   bytes left over, and every shielded one has more than 200, with nothing in between. Turnstile uses this
+   instead of guessing from fees, which fails: some wallets pay fees above 0.001 ZEC.
+3. **Checked against a Zcash node.** 20 randomly chosen shields and deshields were compared with a node's
+   own view of each transaction. All 20 match, across Sapling, Orchard and Ironwood, and every implied fee
+   is an exact multiple of the 5,000-zat ZIP-317 unit.
+4. **Public dumps repeat rows.** Across 90 days of Blockchair's outputs data, 118,086 lines are verbatim
    copies of other lines. Left in, they break the totals of hundreds of transactions a day. With them removed,
    every checked transaction's outputs add up exactly to its recorded total.
-3. **Blank totals follow one rule.** Across 222,404 transactions checked, `input_total` and `output_total`
+5. **Blank totals follow one rule.** Across 222,404 transactions checked, `input_total` and `output_total`
    are blank exactly when a transaction has no transparent inputs or outputs, and never otherwise. Turnstile
    treats those blanks as zero and rejects any other blank as an error.
 
@@ -84,8 +92,8 @@ begins. The full plan lives in [PRD.md](PRD.md).
 |---|---|---|
 | S0 | Foundation: monorepo, strict TypeScript, tests, CI | Done |
 | S1 | Data ingestion: 90 days of mainnet data, verified against source files | Done |
-| S2 | Boundary-event derivation: every shield and deshield | Next |
-| S3 | Matcher, scorer, and Leak Meter | Planned |
+| S2 | Boundary-event derivation: every shield and deshield, verified against a node | Done |
+| S3 | Matcher, scorer, and Leak Meter | Next |
 | S4 | Verifiable snapshot file | Planned |
 | S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Planned |
 | S6 | Web app | Planned |
@@ -98,7 +106,15 @@ What S1 proved, on July 1 – September 28, 2026:
 - All **270** table-days match their source files, checked by an [independent script](scripts/verify-ingest.mjs)
   that reads the raw files without Turnstile's parser
 - Re-running the ingest changes nothing: the database's content hash is identical before and after
-- A full rebuild from the local cache takes **under 7 minutes** and produces the same content hash
+- A full rebuild from the local cache takes **about 7 minutes** and produces the same content hash
+
+What S2 proved, on the same 90 days:
+
+- **85,560** shields and **83,316** deshields derived; 11,578 shields are miners shielding rewards and 146
+  deshields are batch payouts, both tagged rather than dropped
+- **20 of 20** randomly sampled events match a Zcash node exactly ([verify-events.mjs](scripts/verify-events.mjs))
+- September's surge is real: three times July's crossings, driven partly by one address making 22% of
+  September's shields and partly by thousands of new small withdrawals to distinct addresses
 
 ## Try it
 
@@ -117,6 +133,10 @@ check it:
 node apps/cli/dist/bin.js ingest --days 7 --to 2026-09-28
 node apps/cli/dist/bin.js counts
 node scripts/verify-ingest.mjs
+
+node apps/cli/dist/bin.js derive --days 7 --to 2026-09-28
+node apps/cli/dist/bin.js events --days 7 --to 2026-09-28
+node scripts/verify-events.mjs      # checks 20 random events against a public Zcash node
 ```
 
 Downloads are cached in `data/`, so each file is fetched once. Blockchair limits free downloads to about
@@ -135,10 +155,11 @@ Blockchair daily dumps ─▶ ingest ─▶ SQLite ─▶ boundary events ─▶
                                          NEAR Intents quote ─▶ ZIP-321 QR ─▶ your own wallet
 ```
 
-**Detecting crossings.** Turnstile doesn't trust a data source's claims about shielded value. For each
-transaction it compares the transparent value going in with the transparent value coming out. If more went
-in than came out (beyond a fee), the difference entered the shielded pool. If more came out than went in,
-it left.
+**Detecting crossings.** Turnstile doesn't trust a data source's claims about shielded value. It first
+checks whether a transaction has shielded parts at all, by comparing its byte size with the exact size of
+its transparent inputs and outputs. For those that do, it compares the transparent value going in with the
+transparent value coming out. If more went in than came out (beyond a fee), the difference entered a
+shielded pool. If more came out than went in, it left.
 
 **Matching.** For every exit, Turnstile finds the entries that could have funded it: earlier in time, of
 slightly larger value, with the gap consistent with fees. It weighs each candidate by timing and amount, and

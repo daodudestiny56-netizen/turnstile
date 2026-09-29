@@ -247,11 +247,11 @@ Same scorer, but for a *hypothetical* deshield `(a, t_planned)` against the snap
 
 | Check | Output |
 |---|---|
-| k_eff < 5 | 🔴 "Uniquely linkable" |
-| amount has > 3 significant decimals and matches a recent shield | 🔴 "Exact round-trip" |
-| destination ∈ addresses that shielded | 🔴 "Address reuse" |
-| k_eff 5–50 | 🟡 "Weak crowd" |
-| k_eff > 50 | 🟢 |
+| k_eff < 5 | Red: "Uniquely linkable" |
+| amount has > 3 significant decimals and matches a recent shield | Red: "Exact round-trip" |
+| destination ∈ addresses that shielded | Red: "Address reuse" |
+| k_eff 5–50 | Amber: "Weak crowd" |
+| k_eff > 50 | Green |
 
 The user may optionally supply *their own* entry (amount/time) so the tool shows "you, specifically, would be
 picked out". All local.
@@ -350,8 +350,8 @@ Buffer rule: F1–F4 + F6 are the submission. F5, F7–F9 are added only if week
 ## 11. Demo script (3 minutes)
 
 1. **Hook (20s):** "Zcash hides you inside the pool. But the doors are public." Show the headline Leak Meter stat vs null baseline.
-2. **Pain (40s):** Replay one of *our own* controlled round-trips: Pre-flight shows 🔴 "1 candidate — you".
-3. **Fix (60s):** Exit Planner splits it into 3 legs, scores go 🟢; show destination-hygiene warning.
+2. **Pain (40s):** Replay one of *our own* controlled round-trips: Pre-flight shows red: "1 candidate — you".
+3. **Fix (60s):** Exit Planner splits it into 3 legs, scores go green; show destination-hygiene warning.
 4. **Cross-chain (40s):** Execute one leg via NEAR Intents → ZIP-321 QR → paid from ZODL → status SUCCESS.
 5. **Why it's safe (20s):** Network tab is empty during the check — nothing leaves the device.
 

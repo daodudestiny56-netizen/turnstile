@@ -34,14 +34,14 @@ No wallet warns them.
 
 ## What Turnstile does
 
-| | Feature | What you get |
-|---|---|---|
-| 📊 | **Leak Meter** | A public, reproducible measurement: what share of recent mainnet exits can be linked to their entry by amount and timing alone, compared against a baseline that shows how much of that is mere coincidence. |
-| 🚦 | **Pre-flight Check** | Type in the withdrawal you're about to make. Turnstile tells you how many other deposits it could plausibly belong to — and whether the answer is "just yours". |
-| 🧭 | **Exit Planner** | Splits a withdrawal into amounts that are common on-chain, at times that match normal network activity, and scores each leg. What doesn't blend in stays shielded. |
-| 🔁 | **Address-reuse Detector** | Catches the most common self-own: withdrawing to the same transparent address you shielded from. |
-| 🌉 | **NEAR Intents execution** | Each leg of a plan becomes a real cross-chain swap: a just-in-time quote, a one-time deposit address, and a [ZIP-321](https://zips.z.cash/zip-0321) payment QR that you pay from your own wallet. |
-| 🧩 | **`@turnstile/core`** | The engine as a small, dependency-free TypeScript library, so any wallet can show the warning to its users. |
+| Feature | What you get |
+|---|---|
+| **Leak Meter** | A public, reproducible measurement: what share of recent mainnet exits can be linked to their entry by amount and timing alone, compared against a baseline that shows how much of that is mere coincidence. |
+| **Pre-flight Check** | Type in the withdrawal you're about to make. Turnstile tells you how many other deposits it could plausibly belong to — and whether the answer is "just yours". |
+| **Exit Planner** | Splits a withdrawal into amounts that are common on-chain, at times that match normal network activity, and scores each leg. What doesn't blend in stays shielded. |
+| **Address-reuse Detector** | Catches the most common self-own: withdrawing to the same transparent address you shielded from. |
+| **NEAR Intents execution** | Each leg of a plan becomes a real cross-chain swap: a just-in-time quote, a one-time deposit address, and a [ZIP-321](https://zips.z.cash/zip-0321) payment QR that you pay from your own wallet. |
+| **`@turnstile/core`** | The engine as a small, dependency-free TypeScript library, so any wallet can show the warning to its users. |
 
 ## Privacy by construction
 
@@ -80,17 +80,17 @@ surfaced before any matching was written:
 Turnstile is being built in public sections, and each one must pass its acceptance tests before the next
 begins. The full plan lives in [PRD.md](PRD.md).
 
-| Section | | Status |
+| Section | Scope | Status |
 |---|---|---|
-| S0 | Foundation: monorepo, strict TypeScript, tests, CI | ✅ Done |
-| S1 | Data ingestion: 90 days of mainnet data, verified against source files | ✅ Done |
-| S2 | Boundary-event derivation: every shield and deshield | 🔨 Next |
-| S3 | Matcher, scorer, and Leak Meter | ⏳ |
-| S4 | Verifiable snapshot file | ⏳ |
-| S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | ⏳ |
-| S6 | Web app | ⏳ |
-| S7 | NEAR Intents execution | ⏳ |
-| S9 | Docs, deployment, demo | ⏳ |
+| S0 | Foundation: monorepo, strict TypeScript, tests, CI | Done |
+| S1 | Data ingestion: 90 days of mainnet data, verified against source files | Done |
+| S2 | Boundary-event derivation: every shield and deshield | Next |
+| S3 | Matcher, scorer, and Leak Meter | Planned |
+| S4 | Verifiable snapshot file | Planned |
+| S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Planned |
+| S6 | Web app | Planned |
+| S7 | NEAR Intents execution | Planned |
+| S9 | Docs, deployment, demo | Planned |
 
 What S1 proved, on July 1 – September 28, 2026:
 

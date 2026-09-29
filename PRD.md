@@ -229,18 +229,18 @@ You confirm ✅, then we move on. A failing check means we fix it in that sectio
 ### S0 — Foundation
 **Build:** pnpm workspace, TS strict config, Vitest, ESLint/Prettier, tsup, GitHub repo (private until submission), GitHub Actions CI, empty packages with one smoke test each, `LICENSE`, `README` stub.
 **Acceptance:**
-- [ ] `pnpm install && pnpm build && pnpm test` passes locally on Windows
-- [ ] CI run green on GitHub
-- [ ] `pnpm lint` passes with zero warnings
+- [x] `pnpm install && pnpm build && pnpm test` passes locally on Windows
+- [x] CI run green on GitHub
+- [x] `pnpm lint` passes with zero warnings
 
 ### S1 — Data ingestion
 **Build:** `DataSource` interface; `BlockchairDumpSource` (download with cache dir, retry, polite rate limit, gzip stream → TSV parser with `\N` handling); SQLite raw tables; `turnstile ingest --from YYYY-MM-DD --to YYYY-MM-DD`; idempotent per day.
 **Acceptance:**
-- [ ] Ingest 2026-09-28: DB row counts == file line counts − 1 for all 3 tables
-- [ ] Re-running the same day changes nothing (idempotent)
-- [ ] Full 90-day ingest from the local cache completes in < 10 min; per-day counts table printed
+- [x] Ingest 2026-09-28: DB row counts == file line counts − 1 for all 3 tables
+- [x] Re-running the same day changes nothing (idempotent)
+- [x] Full 90-day ingest from the local cache completes in < 10 min; per-day counts table printed
       (the one-time download is throttled by Blockchair to ~100 KB/s and one connection per IP — ~1 h for 90 days)
-- [ ] Parser unit tests: nulls, big values, malformed line rejected with a clear error
+- [x] Parser unit tests: nulls, big values, malformed line rejected with a clear error
 
 ### S2 — Event derivation
 **Build:** rules from §7.2; address joins (SHIELD sources from inputs, DESHIELD destinations from outputs); batch-payout tagging; `turnstile events --day` summary.

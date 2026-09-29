@@ -12,7 +12,7 @@ leaving your device.
 
 ## The problem, in one story
 
-Alice buys 3.1742 ZEC on an exchange that knows her name and withdraws it to a transparent address.
+Kemi buys 3.1742 ZEC on an exchange that knows her name and withdraws it to a transparent address.
 She shields it at 14:05. The shielded pool is doing its job: inside, nobody can see her.
 
 At 17:30 she swaps it for USDC through a cross-chain service, which means 3.1742 ZEC (minus a fee) leaves
@@ -20,7 +20,7 @@ the pool.
 
 Nobody can see *inside* the pool, but everybody can see the doors. The chain records that 3.1742 ZEC went
 in at 14:05 and that the same amount came out three and a half hours later. No one else moved that amount
-that afternoon. The two events are the same person, and Alice's identity at the exchange is now linked to
+that afternoon. The two events are the same person, and Kemi's identity at the exchange is now linked to
 wherever the USDC went.
 
 Her wallet showed a shield icon the whole time.

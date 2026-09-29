@@ -148,7 +148,7 @@ Target ≤ 15 MB.
 
 ### F2 Pre-flight Check
 - FR2.1 Inputs: amount (ZEC), planned time (default now), optional destination t-address, optional own entry (amount + date).
-- FR2.2 Output: verdict (🔴/🟡/🟢), `n`, `k_eff`, list of reasons (exact round-trip, rare amount precision, address reuse, weak crowd), and "what would make it green".
+- FR2.2 Output: verdict (red / amber / green), `n`, `k_eff`, list of reasons (exact round-trip, rare amount precision, address reuse, weak crowd), and "what would make it green".
 - FR2.3 Runs in a Web Worker against the loaded snapshot; p95 < 500 ms.
 
 ### F3 Exit Planner
@@ -208,7 +208,7 @@ turnstile/
 ## 11. Build sections — each must pass before the next starts
 
 **Working agreement:** at the end of each section I run every acceptance check and show you the output.
-You confirm ✅, then we move on. A failing check means we fix it in that section — no carrying bugs forward.
+You confirm, then we move on. A failing check means we fix it in that section — no carrying bugs forward.
 
 | # | Section | Dates | Depends on |
 |---|---|---|---|
@@ -277,8 +277,8 @@ Labels stay in `research/` outputs as aggregates only (P7) — no per-tx lists c
 ### S5 — Pre-flight, reuse detector, planner (core + CLI)
 **Build:** `scoreExit`, address-reuse check, `planExit` (seeded), `.ics` export; CLI `turnstile check 3.1742 --at ... --to t1...`, `turnstile plan 3.1742 --hours 72 --k 50`.
 **Acceptance:**
-- [ ] Hypothetical exit that exactly matches a recent real shield amount → 🔴 with reason "exact round-trip"
-- [ ] Destination = a known shielding address → 🔴 "address reuse"
+- [ ] Hypothetical exit that exactly matches a recent real shield amount → red, with reason "exact round-trip"
+- [ ] Destination = a known shielding address → red, "address reuse"
 - [ ] Planner: every leg ≥ `k_min` (or reports best achievable), legs sum ≤ total, remainder reported, same seed → same plan
 - [ ] p95 `scoreExit` < 500 ms on full snapshot
 

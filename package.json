@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -b",
     "test": "tsc -b && tsc -p tsconfig.test.json && vitest run",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 && node scripts/check-no-emoji.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "tsc -b --clean"

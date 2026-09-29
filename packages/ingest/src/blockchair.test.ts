@@ -53,6 +53,7 @@ describe("BlockchairDumpSource parsing", () => {
       inputTotal: 77703475,
       outputTotal: 0,
       fee: 10000,
+      size: 5230,
       shieldedValueDelta: -77693475,
     });
     expect(deshield?.inputTotal).toBe(0);
@@ -71,6 +72,7 @@ describe("BlockchairDumpSource parsing", () => {
           spending_index: "1",
           recipient: "t1PArj5x9tKg8S9okQTdpq5y2EEEFVmaqgQ",
           value: "74551526",
+          spending_signature_hex: "00ab",
         },
       ]),
     );
@@ -79,7 +81,13 @@ describe("BlockchairDumpSource parsing", () => {
       "outputs",
       "2026-09-28",
       tsv("outputs", [
-        { transaction_hash: "bb".repeat(32), index: "0", recipient: "", value: "5000000" },
+        {
+          transaction_hash: "bb".repeat(32),
+          index: "0",
+          recipient: "",
+          value: "5000000",
+          script_hex: "76a914" + "11".repeat(20) + "88ac",
+        },
       ]),
     );
     const source = new BlockchairDumpSource({ cacheDir, fetch: vi.fn() });
@@ -90,10 +98,18 @@ describe("BlockchairDumpSource parsing", () => {
         recipient: "t1PArj5x9tKg8S9okQTdpq5y2EEEFVmaqgQ",
         value: 74551526,
         isFromCoinbase: false,
+        scriptBytes: 2,
       },
     ]);
     expect(await records(source, "outputs", "2026-09-28")).toEqual([
-      { txHash: "bb".repeat(32), index: 0, recipient: null, value: 5000000, isFromCoinbase: false },
+      {
+        txHash: "bb".repeat(32),
+        index: 0,
+        recipient: null,
+        value: 5000000,
+        isFromCoinbase: false,
+        scriptBytes: 25,
+      },
     ]);
   });
 

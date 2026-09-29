@@ -19,3 +19,22 @@ export type {
   TableRecord,
   TxRecord,
 } from "./types.js";
+export {
+  DEFAULT_DERIVE_CONFIG,
+  classifyTx,
+  compactSizeBytes,
+  residualBytes,
+  sourceImpliedKind,
+  toEvent,
+  transparentBytes,
+} from "./derive.js";
+export type {
+  BoundaryEvent,
+  Classification,
+  DeriveConfig,
+  EventKind,
+  EventTag,
+  TxContext,
+} from "./derive.js";
+export { EventStore } from "./events.js";
+export type { DaySummary, DeriveResult, EventSummary, SourceComparison } from "./events.js";

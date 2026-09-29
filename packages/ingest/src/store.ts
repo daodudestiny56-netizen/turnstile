@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS raw_transactions (
   input_total          INTEGER NOT NULL,
   output_total         INTEGER NOT NULL,
   fee                  INTEGER NOT NULL,
-  shielded_value_delta INTEGER
+  shielded_value_delta INTEGER,
+  size                 INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS raw_transactions_day ON raw_transactions(day);
 
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS raw_inputs (
   recipient        TEXT,
   value            INTEGER NOT NULL,
   is_from_coinbase INTEGER NOT NULL,
+  script_bytes     INTEGER NOT NULL,
   PRIMARY KEY (spending_tx_hash, spending_index)
 );
 CREATE INDEX IF NOT EXISTS raw_inputs_day ON raw_inputs(day);
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS raw_outputs (
   recipient        TEXT,
   value            INTEGER NOT NULL,
   is_from_coinbase INTEGER NOT NULL,
+  script_bytes     INTEGER NOT NULL,
   PRIMARY KEY (tx_hash, idx)
 );
 CREATE INDEX IF NOT EXISTS raw_outputs_day ON raw_outputs(day);
@@ -61,9 +64,9 @@ const RAW_TABLE: { [K in TableName]: string } = {
 };
 
 const INSERT_SQL: { [K in TableName]: string } = {
-  transactions: `INSERT INTO raw_transactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-  inputs: `INSERT INTO raw_inputs VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-  outputs: `INSERT INTO raw_outputs VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+  transactions: `INSERT INTO raw_transactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+  inputs: `INSERT INTO raw_inputs VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+  outputs: `INSERT INTO raw_outputs VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
 };
 
 /** Looks up the stored row with the same primary key; PK columns are positions 1..n of the row. */
@@ -92,6 +95,7 @@ const TO_ROW: { [K in TableName]: (day: string, r: TableRecord[K]) => SqlValue[]
     r.outputTotal,
     r.fee,
     r.shieldedValueDelta,
+    r.size,
   ],
   inputs: (day, r) => [
     day,
@@ -100,8 +104,17 @@ const TO_ROW: { [K in TableName]: (day: string, r: TableRecord[K]) => SqlValue[]
     r.recipient,
     r.value,
     r.isFromCoinbase ? 1 : 0,
+    r.scriptBytes,
   ],
-  outputs: (day, r) => [day, r.txHash, r.index, r.recipient, r.value, r.isFromCoinbase ? 1 : 0],
+  outputs: (day, r) => [
+    day,
+    r.txHash,
+    r.index,
+    r.recipient,
+    r.value,
+    r.isFromCoinbase ? 1 : 0,
+    r.scriptBytes,
+  ],
 };
 
 export const TABLES: readonly TableName[] = ["transactions", "inputs", "outputs"];
@@ -143,7 +156,10 @@ export class RawStore {
       mkdirSync(dirname(path), { recursive: true });
     }
     this.db = new DatabaseSync(path);
-    this.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
+    // Hash-keyed primary keys make inserts random-access; a 256 MB page cache keeps them in memory.
+    this.db.exec(
+      "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
+    );
     this.db.exec(SCHEMA);
   }
 

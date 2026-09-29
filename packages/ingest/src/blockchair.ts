@@ -10,6 +10,7 @@ import { createGunzip } from "node:zlib";
 import { parseDay } from "./days.js";
 import {
   boolField,
+  hexBytesField,
   intField,
   nullableIntField,
   parseTsv,
@@ -82,10 +83,18 @@ const REQUIRED: { [K in TableName]: readonly string[] } = {
     "input_total",
     "output_total",
     "fee",
+    "size",
     "shielded_value_delta",
   ],
-  inputs: ["spending_transaction_hash", "spending_index", "recipient", "value", "is_from_coinbase"],
-  outputs: ["transaction_hash", "index", "recipient", "value", "is_from_coinbase"],
+  inputs: [
+    "spending_transaction_hash",
+    "spending_index",
+    "recipient",
+    "value",
+    "is_from_coinbase",
+    "spending_signature_hex",
+  ],
+  outputs: ["transaction_hash", "index", "recipient", "value", "is_from_coinbase", "script_hex"],
 };
 
 const MAPPERS: { [K in TableName]: (row: TsvRow) => TableRecord[K] } = {
@@ -100,6 +109,7 @@ const MAPPERS: { [K in TableName]: (row: TsvRow) => TableRecord[K] } = {
     inputTotal: totalField(row, "input_total", "input_count"),
     outputTotal: totalField(row, "output_total", "output_count"),
     fee: intField(row, "fee"),
+    size: intField(row, "size"),
     shieldedValueDelta: nullableIntField(row, "shielded_value_delta"),
   }),
   inputs: (row): InputRecord => ({
@@ -108,6 +118,7 @@ const MAPPERS: { [K in TableName]: (row: TsvRow) => TableRecord[K] } = {
     recipient: row["recipient"] || null,
     value: intField(row, "value"),
     isFromCoinbase: boolField(row, "is_from_coinbase"),
+    scriptBytes: hexBytesField(row, "spending_signature_hex"),
   }),
   outputs: (row): OutputRecord => ({
     txHash: stringField(row, "transaction_hash"),
@@ -115,6 +126,7 @@ const MAPPERS: { [K in TableName]: (row: TsvRow) => TableRecord[K] } = {
     recipient: row["recipient"] || null,
     value: intField(row, "value"),
     isFromCoinbase: boolField(row, "is_from_coinbase"),
+    scriptBytes: hexBytesField(row, "script_hex"),
   }),
 };
 

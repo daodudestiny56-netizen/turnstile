@@ -28,9 +28,9 @@ No wallet warns about this today.
 1. Academic: Quesnelle 2017, *On the linkability of Zcash transactions* (round-trip heuristic).
 2. Official: Zcash docs privacy best-practices acknowledge boundary leakage.
 3. **Ours (new):** the Leak Meter figure — % of current mainnet exits that are linkable, vs. a null-model baseline.
-4. **Ours (new, found Sep 29):** Blockchair's `shielded_value_delta` is wrong (reports 0) for ~1,488 of 7,186
-   non-coinbase txs on Sep 28, 2026 — mostly v6 transactions. Ecosystem tooling under-reports shielded flows;
-   Turnstile derives them correctly from the transparent side.
+4. **Ours (new, verified against a Zcash node):** Blockchair's `shielded_value_delta` only reflects the Sapling and
+   Sprout pools. It reports no movement for 89.8% of boundary crossings over Jul–Sep 2026, all of them v5/v6
+   transactions (the versions that carry Orchard and Ironwood). Turnstile derives every crossing structurally and confirmed 20 of 20 sampled events against a node.
 
 ## 3. How we win — mapping to judging criteria
 
@@ -112,23 +112,30 @@ Observed data facts (verified in S1):
 
 Ingest sits behind a `DataSource` interface so a `ZebraRpcSource` can be added later without touching anything else.
 
-### 7.2 Event derivation rules (from the transparent side — does not trust `shielded_value_delta`)
+### 7.2 Event derivation rules (verified in S2; full rationale in [docs/methodology.md](docs/methodology.md))
 
-For each non-coinbase tx: `tIn = input_total` (0 if `\N`), `tOut = output_total`, `gap = tIn − tOut`,
-`feeMax = 5000 × max(2, input_count, output_count)` (ZIP-317 upper bound for transparent-only shape; tune in S2).
+`shielded_value_delta` is never trusted. Each non-coinbase tx is classified in two steps:
+
+1. **Structure.** `residual = size − exact transparent size` (computed from every scriptSig and script).
+   Transparent-only txs have residual exactly 27 (v4), 23 (v5) or 24 (v6); anything above
+   `shieldedResidualMin = 200` bytes has shielded components. Without them a tx is never a crossing.
+2. **Direction and amount**, for txs with shielded components, where `gap = tIn − tOut`:
 
 | Condition | Event | Amount |
 |---|---|---|
-| `gap > feeMax` | **SHIELD** | `gap − fee_recorded` (± fee tolerance in matcher) |
-| `gap < 0` | **DESHIELD** | `−gap` (= `tOut` when there are no t-inputs) |
-| `|gap| ≤ feeMax` | transparent-only / fully shielded → ignored | — |
-| `output_count ≥ BATCH_N` and no t-inputs | DESHIELD tagged `batch_payout` (e.g. mining pools), excluded from user matching, reported separately | — |
+| no t-inputs, some t-outputs | **DESHIELD** | `tOut` |
+| `gap < 0` | **DESHIELD**, tagged `mixed` | `−gap` |
+| `gap > shieldMinZat` (20,000) | **SHIELD** | `gap` (includes fee) |
+| otherwise | none (fully shielded, or t-inputs only pay the fee) | — |
 
-Known limitation (documented): a tx that shields and deshields simultaneously nets out and is under-counted.
+Tags: `coinbase` (SHIELD spending a coinbase output), `batch` (DESHIELD with ≥ 3 t-outputs), `mixed`.
+Txs missing input/output rows are `INCOMPLETE` (14 in 90 days) and never guessed.
+
+Known limitation: a tx that shields and deshields at once nets out and is under-counted.
 
 ### 7.3 Event store (SQLite)
 
-`events(txid, height, time, kind, amount_zat, fee_recorded, t_addrs_json, version, tags)` + `ingest_days(day, sha256, rows)`.
+`events(day, txid, height, time, kind, amount, addresses, tags, version, input_count, output_count, source_delta)` + `derive_days` (per-day counts and the config used) + `ingest_days(tbl, day, fingerprint, rows, duplicates)`.
 See design doc §5.2.
 
 ### 7.4 Snapshot
@@ -243,12 +250,12 @@ You confirm, then we move on. A failing check means we fix it in that section �
 - [x] Parser unit tests: nulls, big values, malformed line rejected with a clear error
 
 ### S2 — Event derivation
-**Build:** rules from §7.2; address joins (SHIELD sources from inputs, DESHIELD destinations from outputs); batch-payout tagging; `turnstile events --day` summary.
+**Build:** rules from §7.2; address joins (SHIELD sources from inputs, DESHIELD destinations from outputs); tagging; `turnstile derive` and `turnstile events`.
 **Acceptance:**
-- [ ] Unit tests for every row in the §7.2 table (fixtures built from real Sep 28 rows)
-- [ ] 10 random SHIELD and 10 random DESHIELD events hand-checked against a block explorer — all correct
-- [ ] Report: events/day, batch-payout share, count of txs where `shielded_value_delta` disagrees with ours (the Blockchair finding, reproduced)
-- [ ] `feeMax` and `BATCH_N` tuned with a short written justification
+- [x] Unit tests for every row in the §7.2 table (fixtures built from real mainnet rows)
+- [x] 10 random SHIELD and 10 random DESHIELD events checked against a Zcash node (`scripts/verify-events.mjs`) — 20/20 correct
+- [x] Report: events/day, batch-payout share, count of txs where `shielded_value_delta` disagrees with ours (the Blockchair finding, reproduced)
+- [x] Thresholds (`shieldedResidualMin`, `shieldMinZat`, `batchMinOutputs`) tuned with written justification ([docs/methodology.md](docs/methodology.md))
 
 ### S3 — Matcher, scorer & Leak Meter
 **Build:** `@turnstile/core` matcher + kernels + `k_eff`; null model; `stats.json`; `turnstile meter`.

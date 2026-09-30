@@ -4,6 +4,7 @@
  */
 import { formatZat } from "./amount.js";
 import { measureDenominations as measure, type Denomination } from "./denominations.js";
+import type { MatchParams } from "./matcher.js";
 import {
   CROWD_TARGET,
   preflight,
@@ -97,6 +98,84 @@ function legTimes(
   return times.sort((a, b) => a - b);
 }
 
+/**
+ * Sums of two or more legs that could be matched to the user's deposit minus fees: an observer who
+ * groups the legs (by timing or destination) could then link the group to the deposit. With the
+ * deposit unknown, it is assumed to be the total plus fees, so sums within fees of the total count.
+ */
+export function linkedSums(
+  legs: readonly number[],
+  total: number,
+  own: OwnDeposit | undefined,
+  params: MatchParams,
+): number[] {
+  const out: number[] = [];
+  const n = legs.length;
+  for (let mask = 1; mask < 1 << n; mask++) {
+    if ((mask & (mask - 1)) === 0) continue; // single legs are checked by preflight
+    let s = 0;
+    for (let i = 0; i < n; i++) if (mask & (1 << i)) s += legs[i]!;
+    const gap = own ? own.amount - s : total - s;
+    const inRange = own ? gap >= 0 && gap <= params.feeMaxZat : Math.abs(gap) <= params.feeMaxZat;
+    if (inRange && gap % params.feeUnitZat === 0) out.push(s);
+  }
+  return out;
+}
+
+/** Search cap: bounds the planner's work on any input; the space is tiny in practice. */
+const SEARCH_NODE_CAP = 200_000;
+
+/**
+ * Choose up to `maxLegs` amounts from `pool` (largest first) that withdraw as much as possible
+ * without exceeding `total`, subject to `safe`. Ties prefer mixed amounts (fewer repeats of any one
+ * amount), then fewer legs. Deterministic.
+ */
+export function chooseLegs(
+  pool: readonly number[],
+  total: number,
+  maxLegs: number,
+  safe: (legs: readonly number[]) => boolean,
+): number[] {
+  let best: number[] = [];
+  let bestSum = 0;
+  let bestRepeat = Infinity;
+  let nodes = 0;
+  const current: number[] = [];
+  const maxRepeat = (xs: readonly number[]): number => {
+    const counts = new Map<number, number>();
+    let m = 0;
+    for (const x of xs) m = Math.max(m, counts.set(x, (counts.get(x) ?? 0) + 1).get(x)!);
+    return m;
+  };
+  const visit = (start: number, sum: number): void => {
+    if (++nodes > SEARCH_NODE_CAP) return;
+    if (current.length > 0) {
+      const repeat = maxRepeat(current);
+      const better =
+        sum > bestSum ||
+        (sum === bestSum &&
+          (repeat < bestRepeat || (repeat === bestRepeat && current.length < best.length)));
+      if (better && safe(current)) {
+        best = [...current];
+        bestSum = sum;
+        bestRepeat = repeat;
+      }
+    }
+    if (current.length === maxLegs) return;
+    for (let i = start; i < pool.length; i++) {
+      const d = pool[i]!;
+      if (sum + d > total) continue;
+      // Every later pick is at most d: stop once even filling every leg can't reach the best.
+      if (sum + (maxLegs - current.length) * d < bestSum) break;
+      current.push(d);
+      visit(i, sum + d);
+      current.pop();
+    }
+  };
+  visit(0, 0);
+  return best;
+}
+
 export async function planExit(ctx: PreflightContext, options: PlanOptions): Promise<ExitPlan> {
   const opts = {
     crowdTarget: CROWD_TARGET,
@@ -117,15 +196,13 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
     eligible = affordable.filter((d) => d.crowd === best && best > 0);
   }
 
-  // Greedy: largest amount that still fits, repeated, up to maxLegs.
-  const amounts: number[] = [];
-  let remaining = opts.total;
-  for (const d of eligible) {
-    while (d.amount <= remaining && amounts.length < opts.maxLegs) {
-      amounts.push(d.amount);
-      remaining -= d.amount;
-    }
-  }
+  const pool = eligible.map((d) => d.amount).sort((a, b) => b - a);
+  const safe = (legs: readonly number[]): boolean =>
+    linkedSums(legs, opts.total, opts.own, ctx.params).length === 0;
+  const amounts = chooseLegs(pool, opts.total, opts.maxLegs, safe);
+  const unconstrained = chooseLegs(pool, opts.total, opts.maxLegs, () => true);
+  const sumOf = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
+  const heldBackForSums = sumOf(unconstrained) - sumOf(amounts);
   const crowdOf = new Map(denominations.map((d) => [d.amount, d.crowd]));
   // Shuffle leg order so the largest isn't always first.
   for (let i = amounts.length - 1; i > 0; i--) {
@@ -172,6 +249,12 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
   } else if (remainder > 0 && amounts.length > 0) {
     advice.push(
       `Keep the remaining ${formatZat(remainder)} ZEC shielded: it's smaller than any amount that blends in.`,
+    );
+  }
+  if (heldBackForSums > 0) {
+    advice.push(
+      `${formatZat(heldBackForSums)} ZEC more stays shielded so that no group of these withdrawals ` +
+        `adds up to your deposit minus fees, which would let someone who groups them link them to it.`,
     );
   }
   if (!targetMet) {

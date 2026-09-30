@@ -135,7 +135,13 @@ for (const total of [31_742_000, 317_420_000, 1_234_567_890, 5_000_000_000]) {
       a.legs.length <= a.options.maxLegs &&
       (a.targetMet
         ? a.legs.every((l) => l.crowd >= target)
-        : a.advice[0].includes("best available"));
+        : a.advice[0].includes("best available")) &&
+      core.linkedSums(
+        a.legs.map((l) => l.amount),
+        total,
+        undefined,
+        P,
+      ).length === 0;
     if (!ok) {
       planOk = false;
       console.log(`      plan failed: total ${total} seed ${seed}`);
@@ -158,6 +164,7 @@ check(
   planOk &&
     JSON.stringify(s1.legs.map((l) => l.time)) !== JSON.stringify(s2.legs.map((l) => l.time)),
   `planner: ${plans} plans meet the crowd target (or say why), sum to total with remainder, ` +
+    `no group of legs adds up to the total within fees, ` +
     `repeat exactly per seed, and differ across seeds`,
 );
 

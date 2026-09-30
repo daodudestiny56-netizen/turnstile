@@ -9,6 +9,7 @@ import {
   planExit,
   planToIcs,
   preflight,
+  sha256Hex,
   type MeterStats,
   type PreflightContext,
 } from "@turnstile/core";
@@ -28,15 +29,33 @@ async function fetchBytes(url: URL): Promise<Uint8Array> {
 }
 
 async function init(base: string): Promise<EngineInfo> {
-  const at = (name: string): URL => new URL(name, base);
-  const manifestRes = await fetch(at("manifest.json"));
+  // crypto.subtle only exists in secure contexts; without it nothing can be verified.
+  if (!globalThis.crypto?.subtle) {
+    throw new Error(
+      "This page needs a secure connection (https:// or localhost) to verify the data. Open it over HTTPS.",
+    );
+  }
+  const at = (name: string, version?: string): URL => {
+    const url = new URL(name, base);
+    // Versioned by content hash: a cache can never pair a new manifest with an old file.
+    if (version) url.searchParams.set("v", version.slice(0, 16));
+    return url;
+  };
+  const manifestRes = await fetch(at("manifest.json"), { cache: "no-cache" });
   if (!manifestRes.ok) throw new Error("The data snapshot is missing from this site.");
   const manifest = parseManifest(await manifestRes.text());
+  const f = manifest.files;
   const [snapshot, addresses, stats] = await Promise.all([
-    fetchBytes(at("snapshot.bin.gz")),
-    fetchBytes(at("addresses.bin")),
-    fetchBytes(at("stats.json")),
+    fetchBytes(at("snapshot.bin.gz", f["snapshot.bin.gz"].sha256)),
+    fetchBytes(at("addresses.bin", f["addresses.bin"].sha256)),
+    fetchBytes(at("stats.json", f["stats.json"].sha256)),
   ]);
+  if (
+    typeof DecompressionStream === "undefined" &&
+    (await sha256Hex(snapshot)) === f["snapshot.bin.gz"].sha256
+  ) {
+    throw new Error("This browser is too old to open the data file. Please update it and reload.");
+  }
   const verified = await loadSnapshot(manifest, { snapshot, addresses, stats });
   ctx = createPreflightContext(verified.data, verified.addresses);
   return {

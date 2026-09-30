@@ -5,11 +5,11 @@ import {
   createPreflightContext,
   formatZat,
   loadSnapshot,
+  parsePositiveZec,
   parseManifest,
   planExit,
   planToIcs,
   preflight,
-  zecToZat,
   type OwnDeposit,
   type PreflightContext,
   type PreflightResult,
@@ -38,7 +38,7 @@ export function parseTime(value: string | undefined): number {
 function ownDeposit(opts: { deposit?: string; depositAt?: string }): OwnDeposit | undefined {
   if (opts.deposit === undefined) return undefined;
   if (opts.depositAt === undefined) throw new RangeError("--deposit needs --deposit-at");
-  return { amount: zecToZat(opts.deposit), time: parseTime(opts.depositAt) };
+  return { amount: parsePositiveZec(opts.deposit), time: parseTime(opts.depositAt) };
 }
 
 const day = (t: number): string => new Date(t * 1000).toISOString().slice(0, 10);
@@ -83,13 +83,15 @@ export interface CheckOptions {
 }
 
 export async function checkCommand(zec: string, opts: CheckOptions): Promise<void> {
+  // Validate input before loading or printing anything.
+  const amount = parsePositiveZec(zec);
   const bundle = await loadBundle(opts.snapshot);
   const ctx = createPreflightContext(bundle.data, bundle.addresses);
   const time = parseTime(opts.at);
   const own = ownDeposit(opts);
   printData(ctx, time);
   console.log(
-    `Checking a withdrawal of ${formatZat(zecToZat(zec))} ZEC at ${when(time)} UTC` +
+    `Checking a withdrawal of ${formatZat(amount)} ZEC at ${when(time)} UTC` +
       (opts.to ? ` to ${opts.to}` : "") +
       (own
         ? `, against your deposit of ${formatZat(own.amount)} ZEC at ${when(own.time)} UTC`
@@ -97,7 +99,7 @@ export async function checkCommand(zec: string, opts: CheckOptions): Promise<voi
   );
   const result = await preflight(
     ctx,
-    { amount: zecToZat(zec), time, ...(opts.to ? { destination: opts.to } : {}) },
+    { amount, time, ...(opts.to ? { destination: opts.to } : {}) },
     own,
   );
   printResult(result);
@@ -119,6 +121,7 @@ export interface PlanCommandOptions {
 }
 
 export async function planCommand(zec: string, opts: PlanCommandOptions): Promise<void> {
+  const total = parsePositiveZec(zec);
   const bundle = await loadBundle(opts.snapshot);
   const ctx = createPreflightContext(bundle.data, bundle.addresses);
   const start = parseTime(opts.start);
@@ -127,7 +130,7 @@ export async function planCommand(zec: string, opts: PlanCommandOptions): Promis
   // the same times, which would itself be a fingerprint.
   const seed = opts.seed !== undefined ? Number(opts.seed) : randomInt(1, 2 ** 31);
   const plan = await planExit(ctx, {
-    total: zecToZat(zec),
+    total,
     start,
     horizonHours: Number(opts.hours),
     maxLegs: Number(opts.legs),

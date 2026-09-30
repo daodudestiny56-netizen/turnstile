@@ -1,6 +1,6 @@
 export const VERSION = "0.0.0";
 
-export { ZAT_PER_ZEC, MAX_ZAT, zecToZat, formatZat } from "./amount.js";
+export { ZAT_PER_ZEC, MAX_ZAT, formatZat, parsePositiveZec, zecToZat } from "./amount.js";
 export { clusterEntities, serviceEntities } from "./entities.js";
 export {
   DEFAULT_MATCH_PARAMS,

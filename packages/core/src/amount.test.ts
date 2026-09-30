@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ZAT, formatZat, zecToZat } from "./amount.js";
+import { MAX_ZAT, formatZat, parsePositiveZec, zecToZat } from "./amount.js";
 
 describe("zecToZat", () => {
   it("parses whole and fractional amounts exactly", () => {
@@ -16,10 +16,30 @@ describe("zecToZat", () => {
   });
 
   it("rejects malformed or out-of-range input", () => {
-    for (const bad of ["", "-1", "1.123456789", "abc", "1e3", ".5", "1,5"]) {
+    for (const bad of ["", ".", "-1", "1.123456789", "abc", "1e3", "1,5", "1.2.3"]) {
       expect(() => zecToZat(bad), bad).toThrow(RangeError);
     }
     expect(() => zecToZat("21000001")).toThrow(RangeError);
+  });
+});
+
+describe("amount input as people type it", () => {
+  it("accepts a leading or trailing dot", () => {
+    expect(zecToZat(".5")).toBe(50_000_000);
+    expect(zecToZat("2.")).toBe(200_000_000);
+  });
+
+  it("explains what's wrong", () => {
+    expect(() => zecToZat("1,5")).toThrow(/use a dot for decimals, e.g. 1.5/);
+    expect(() => zecToZat("1.123456789")).toThrow(/at most 8 decimal places/);
+    expect(() => zecToZat("-1")).toThrow(/can't be negative/);
+    expect(() => zecToZat("abc")).toThrow(/such as 2.5/);
+  });
+
+  it("requires more than zero for an amount to move", () => {
+    expect(parsePositiveZec("0.00000001")).toBe(1);
+    expect(() => parsePositiveZec("0")).toThrow(/more than 0/);
+    expect(() => parsePositiveZec("0.000")).toThrow(/more than 0/);
   });
 });
 

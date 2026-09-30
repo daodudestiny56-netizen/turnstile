@@ -1,0 +1,82 @@
+/**
+ * All analysis runs here, off the main thread and on the user's device. The only network activity
+ * is the one-time download of the public snapshot, the same files for every visitor.
+ */
+import {
+  createPreflightContext,
+  loadSnapshot,
+  parseManifest,
+  planExit,
+  planToIcs,
+  preflight,
+  type MeterStats,
+  type PreflightContext,
+} from "@turnstile/core";
+import type { EngineInfo, WorkerRequest, WorkerResponse } from "./protocol";
+
+const scope = self as unknown as {
+  onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage(message: WorkerResponse): void;
+};
+
+let ctx: PreflightContext | undefined;
+
+async function fetchBytes(url: URL): Promise<Uint8Array> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not load ${url.pathname} (HTTP ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+async function init(base: string): Promise<EngineInfo> {
+  const at = (name: string): URL => new URL(name, base);
+  const manifestRes = await fetch(at("manifest.json"));
+  if (!manifestRes.ok) throw new Error("The data snapshot is missing from this site.");
+  const manifest = parseManifest(await manifestRes.text());
+  const [snapshot, addresses, stats] = await Promise.all([
+    fetchBytes(at("snapshot.bin.gz")),
+    fetchBytes(at("addresses.bin")),
+    fetchBytes(at("stats.json")),
+  ]);
+  const verified = await loadSnapshot(manifest, { snapshot, addresses, stats });
+  ctx = createPreflightContext(verified.data, verified.addresses);
+  return {
+    manifest,
+    stats: verified.stats as MeterStats,
+    dataFrom: verified.data.dataFrom,
+    dataTo: verified.data.dataTo,
+  };
+}
+
+function ready(): PreflightContext {
+  if (!ctx) throw new Error("The data snapshot hasn't finished loading.");
+  return ctx;
+}
+
+scope.onmessage = async (event) => {
+  const req = event.data;
+  try {
+    switch (req.type) {
+      case "init":
+        scope.postMessage({ id: req.id, ok: true, value: await init(req.base) });
+        break;
+      case "check":
+        scope.postMessage({
+          id: req.id,
+          ok: true,
+          value: await preflight(ready(), req.exit, req.own),
+        });
+        break;
+      case "plan": {
+        const plan = await planExit(ready(), req.options);
+        scope.postMessage({ id: req.id, ok: true, value: { plan, ics: planToIcs(plan) } });
+        break;
+      }
+    }
+  } catch (err) {
+    scope.postMessage({
+      id: req.id,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+};

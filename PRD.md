@@ -309,12 +309,12 @@ Labels are computed on the fly and reported as aggregates only (P7).
 - [x] Freshness: the data's date range is always shown; a withdrawal more than 2 days after the data ends gets an amber "stale-data" warning, and the crowd is measured over the last full week of data
 
 ### S6 — Web app
-**Build:** Vite + React SPA; pages: Leak Meter dashboard, Pre-flight, Planner, (Execute placeholder); core runs in a Web Worker; strict CSP; no third-party assets.
+**Build:** Vite + React SPA (`apps/web`) with a landing page, Pre-flight Check, Exit Planner and Leak Meter dashboard; all analysis in a Web Worker against the verified snapshot; hash routing so any static host works; strict CSP injected at build (`default-src 'none'`, only the 1Click API allowed besides self); self-hosted Inter font, no third-party assets. Design follows the dark-green reference: near-black surfaces, green glow, green pill buttons, glass cards; light theme selected, not inverted. Chart colors validated for colorblind safety in both themes. Independent check: `scripts/verify-web.mjs` (`pnpm verify:web`).
 **Acceptance:**
-- [ ] Playwright: load app → run check → run plan → **zero network requests after snapshot load** (P1)
-- [ ] Build-output scan finds no external URLs except the 1Click origin (P3)
-- [ ] Works at 375 px width and desktop; light/dark
-- [ ] Deployed preview URL works from a clean browser
+- [x] Playwright: load app → run check (a real round trip, red) → run plan → download calendar → Leak Meter table and theme switch: **0 network requests after snapshot load** (P1), 0 to any other origin, 0 console errors or CSP violations
+- [x] Build-output scan finds no external origins except the allowlist: the 1Click API, github.com links, and two never-fetched identifier strings (www.w3.org SVG namespace, react.dev error text) (P3)
+- [x] Works at 375 px width and desktop; light/dark: no horizontal overflow on any page, and the axe accessibility audit reports no serious or critical issues on any page, in either theme, at either size (16 of 16 combinations)
+- [x] Production build verified locally from a clean browser context. **Decision (Sep 30):** the public deploy moves to S9, so the project isn't exposed before judging (submissions are sealed); S9's checks already cover the live URL
 
 ### S7 — NEAR Intents execution
 **Build:** `packages/intents` (tokens, dry quote, live quote, status); Execute flow per FR6.2; ZIP-321 QR; status polling; disclosure copy.

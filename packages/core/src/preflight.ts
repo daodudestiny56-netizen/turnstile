@@ -112,7 +112,8 @@ export interface PreflightResult {
 }
 
 const RANK: Record<Verdict, number> = { green: 0, amber: 1, red: 2 };
-const date = (t: number): string => new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ");
+const date = (t: number): string =>
+  `${new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const zec = (zat: number): string => `${formatZat(zat)} ZEC`;
 
 /** Round down to 0.01 ZEC (or 0.001 ZEC for amounts under 0.01), the precision crowds form at. */

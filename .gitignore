@@ -10,3 +10,6 @@ data/
 *.sqlite-*
 # private research artifacts
 *.local.json
+
+# web build output and the copied snapshot
+apps/web/public/snapshot/

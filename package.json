@@ -7,14 +7,16 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter @turnstile/web build",
     "test": "tsc -b && tsc -p tsconfig.test.json && vitest run",
     "lint": "eslint . --max-warnings 0 && node scripts/check-no-emoji.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "clean": "tsc -b --clean"
+    "clean": "tsc -b --clean",
+    "verify:web": "pnpm build && node scripts/verify-web.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.3",
     "eslint": "^10.11.0",

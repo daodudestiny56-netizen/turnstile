@@ -123,8 +123,8 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
-| S6 | Web app | Next |
-| S7 | NEAR Intents execution | Planned |
+| S6 | Web app: landing page, check, planner and Leak Meter; accessible, 0 requests while you use it | Done |
+| S7 | NEAR Intents execution | Next |
 | S9 | Docs, deployment, demo | Planned |
 
 What S1 proved, on July 1 – September 28, 2026:
@@ -146,6 +146,13 @@ What S2 proved, on the same 90 days:
 ## Try it
 
 You need Node 22.13 or later and [pnpm](https://pnpm.io/).
+
+**Run the web app** (after building a snapshot, below):
+
+```sh
+pnpm build
+pnpm --filter @turnstile/web preview    # open the printed local address
+```
 
 ```sh
 pnpm install
@@ -219,6 +226,7 @@ but removes the true match. The Leak Meter reports its result against the larger
 | [`packages/ingest`](packages/ingest) | Data sources, verified ingestion, and boundary-event derivation |
 | [`packages/intents`](packages/intents) | NEAR Intents 1Click adapter, the only code allowed to contact a third party |
 | [`apps/cli`](apps/cli) | The `turnstile` command-line tool |
+| [`apps/web`](apps/web) | The web app: landing page, Pre-flight Check, Exit Planner, Leak Meter |
 | [`scripts`](scripts) | Independent verification scripts |
 | [`PRD.md`](PRD.md) | Scope, requirements, and the acceptance tests for every section |
 | [`docs/turnstile-design.md`](docs/turnstile-design.md) | System design and algorithms |

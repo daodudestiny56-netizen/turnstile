@@ -1,0 +1,188 @@
+import { useEffect, useState, type ReactNode } from "react";
+import type { Reason, Verdict } from "@turnstile/core";
+import { useEngine } from "./engine";
+import { day } from "./format";
+import { Alert, Clock, ShieldCheck, Stop } from "./icons";
+
+/* ----- Routing: hash-based, so any static host serves every page ----- */
+
+export interface Route {
+  path: string;
+  params: URLSearchParams;
+}
+
+function readRoute(): Route {
+  const hash = window.location.hash.replace(/^#/, "") || "/";
+  const [path = "/", query = ""] = hash.split("?");
+  return { path, params: new URLSearchParams(query) };
+}
+
+export function useRoute(): Route {
+  const [route, setRoute] = useState(readRoute);
+  useEffect(() => {
+    const onChange = (): void => {
+      setRoute(readRoute());
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return route;
+}
+
+export function href(path: string, params?: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) if (v) q.set(k, v);
+  const s = q.toString();
+  return `#${path}${s ? `?${s}` : ""}`;
+}
+
+/* ----- Theme ----- */
+
+type Theme = "dark" | "light";
+
+function storedTheme(): Theme {
+  try {
+    return localStorage.getItem("turnstile-theme") === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+export function useTheme(): [Theme, () => void] {
+  const [theme, setTheme] = useState<Theme>(storedTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("turnstile-theme", theme);
+    } catch {
+      // Private mode or blocked storage: the theme just won't persist.
+    }
+  }, [theme]);
+  return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
+}
+
+/* ----- Verdicts ----- */
+
+const VERDICT_COPY: Record<Verdict, { title: string; body: string }> = {
+  red: {
+    title: "Red: this would give you away",
+    body: "An observer could link this withdrawal to a specific deposit.",
+  },
+  amber: {
+    title: "Amber: proceed with care",
+    body: "Not linked outright, but the crowd around it is thin or the data is dated.",
+  },
+  green: {
+    title: "Green: this blends in",
+    body: "Amount and timing don't single you out.",
+  },
+};
+
+export function VerdictIcon({
+  verdict,
+  size = 26,
+}: {
+  verdict: Verdict;
+  size?: number;
+}): ReactNode {
+  if (verdict === "red") return <Stop size={size} />;
+  if (verdict === "amber") return <Alert size={size} />;
+  return <ShieldCheck size={size} />;
+}
+
+export function VerdictBanner({
+  verdict,
+  title,
+  body,
+  headingLevel = 2,
+}: {
+  verdict: Verdict;
+  title?: string;
+  body?: string;
+  headingLevel?: 2 | 3;
+}): ReactNode {
+  const copy = VERDICT_COPY[verdict];
+  const Heading = headingLevel === 2 ? "h2" : "h3";
+  return (
+    <div className={`verdict verdict-${verdict}`}>
+      <span className="verdict-icon">
+        <VerdictIcon verdict={verdict} />
+      </span>
+      <div>
+        <Heading>{title ?? copy.title}</Heading>
+        <p>{body ?? copy.body}</p>
+      </div>
+    </div>
+  );
+}
+
+export function Tag({ verdict, children }: { verdict: Verdict; children?: ReactNode }): ReactNode {
+  return (
+    <span className={`tag tag-${verdict}`}>
+      <VerdictIcon verdict={verdict} size={14} />
+      {children ?? verdict}
+    </span>
+  );
+}
+
+const REASON_TITLES: Record<Reason["code"], string> = {
+  "exact-round-trip": "Exact round trip",
+  "unique-match": "Matches one deposit",
+  "address-reuse": "Address reuse",
+  "thin-crowd": "Thin crowd",
+  "precise-amount": "Precise amount",
+  "stale-data": "Data may be out of date",
+  crowd: "Hidden in a crowd",
+  "no-match": "No matching deposit",
+};
+
+export function ReasonList({ reasons }: { reasons: Reason[] }): ReactNode {
+  return (
+    <ul className="reasons">
+      {reasons.map((r) => (
+        <li key={r.code}>
+          <div>
+            <Tag verdict={r.severity}>{REASON_TITLES[r.code]}</Tag>
+          </div>
+          <p>{r.message}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* ----- Data status ----- */
+
+export function DataStatus(): ReactNode {
+  const { state } = useEngine();
+  if (state.status === "loading") {
+    return (
+      <div className="status-banner" role="status">
+        <span className="spinner" aria-hidden="true" />
+        Downloading and verifying the public data snapshot. It's the same file for everyone, and
+        nothing you type is ever sent.
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div className="status-banner error" role="alert">
+        <Alert size={18} />
+        The data snapshot couldn't be loaded or failed verification: {state.message}
+      </div>
+    );
+  }
+  const { info } = state;
+  return (
+    <p className="data-note">
+      <Clock size={16} />
+      <span>
+        Data: {day(info.dataFrom)} to {day(info.dataTo - 1)} (
+        {info.manifest.counts.shields.toLocaleString()} deposits,{" "}
+        {info.manifest.counts.exits.toLocaleString()} withdrawals), verified on this device. Checks
+        warn you when your withdrawal is more than two days after the data ends.
+      </span>
+    </p>
+  );
+}

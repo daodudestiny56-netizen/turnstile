@@ -123,7 +123,7 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
-| S6 | Web app: landing page, check, planner and Leak Meter; accessible, 0 requests while you use it | Done |
+| S6 | Web app: landing page, check, planner and Leak Meter; 219 end-to-end tests in Chromium, Firefox and WebKit | Done |
 | S7 | NEAR Intents execution | Next |
 | S9 | Docs, deployment, demo | Planned |
 
@@ -238,7 +238,11 @@ pnpm build          # TypeScript project build
 pnpm test           # type-check (including tests) and run the Vitest suite
 pnpm lint           # ESLint, zero warnings allowed
 pnpm format:check   # Prettier
+pnpm e2e            # end-to-end tests of the web app in Chromium, Firefox and WebKit (after pnpm build)
 ```
+
+Every way the web app can fail, and the test that covers it, is in
+[docs/web-test-plan.md](docs/web-test-plan.md).
 
 CI runs all four on every push.
 

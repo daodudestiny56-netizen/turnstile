@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { href, useRoute, useTheme } from "./components";
 import { LogoMark, Menu, Moon, Sun } from "./icons";
 import { CheckPage } from "./pages/Check";
@@ -106,8 +106,24 @@ function Footer(): ReactNode {
   );
 }
 
+const TITLES: Record<string, string> = {
+  "/check": "Pre-flight Check",
+  "/plan": "Exit Planner",
+  "/meter": "Leak Meter",
+};
+
 export function App(): ReactNode {
   const route = useRoute();
+  const firstRender = useRef(true);
+  useEffect(() => {
+    const title = TITLES[route.path];
+    document.title = title
+      ? `${title} | Turnstile`
+      : "Turnstile: leave the shielded pool without a trail";
+    // After navigating, start keyboard and screen-reader users at the new page's content.
+    if (firstRender.current) firstRender.current = false;
+    else document.getElementById("main")?.focus({ preventScroll: true });
+  }, [route.path]);
   const key = window.location.hash;
   let page: ReactNode;
   switch (route.path) {

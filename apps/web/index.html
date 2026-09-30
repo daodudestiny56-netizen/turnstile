@@ -8,10 +8,18 @@
       content="Turnstile checks a Zcash withdrawal against 90 days of real activity, on your device, before you make it."
     />
     <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#070a07" />
+    <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <title>Turnstile: leave the shielded pool without a trail</title>
   </head>
   <body>
+    <noscript>
+      <p>
+        Turnstile needs JavaScript: every check runs on your own device, in your browser, so that
+        nothing you enter is ever sent anywhere. Please enable JavaScript and reload.
+      </p>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>

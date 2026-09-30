@@ -13,11 +13,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "tsc -b --clean",
-    "verify:web": "pnpm build && node scripts/verify-web.mjs"
+    "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
     "eslint": "^10.11.0",
     "globals": "^17.12.0",

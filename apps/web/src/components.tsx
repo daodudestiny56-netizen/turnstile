@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Reason, Verdict } from "@turnstile/core";
 import { useEngine } from "./engine";
-import { day } from "./format";
+import { day, nowSec } from "./format";
 import { Alert, Clock, ShieldCheck, Stop } from "./icons";
 
 /* ----- Routing: hash-based, so any static host serves every page ----- */
@@ -154,8 +154,11 @@ export function ReasonList({ reasons }: { reasons: Reason[] }): ReactNode {
 
 /* ----- Data status ----- */
 
+/** Data older than this (relative to the viewer's clock) is flagged on every tool page. */
+const STALE_DATA_SEC = 2 * 86_400;
+
 export function DataStatus(): ReactNode {
-  const { state } = useEngine();
+  const { state, retry } = useEngine();
   if (state.status === "loading") {
     return (
       <div className="status-banner" role="status">
@@ -169,20 +172,37 @@ export function DataStatus(): ReactNode {
     return (
       <div className="status-banner error" role="alert">
         <Alert size={18} />
-        The data snapshot couldn't be loaded or failed verification: {state.message}
+        <span className="status-text">
+          The data snapshot couldn't be loaded or failed verification. {state.message}
+        </span>
+        <button type="button" className="btn btn-ghost btn-small" onClick={retry}>
+          Try again
+        </button>
       </div>
     );
   }
   const { info } = state;
+  const age = nowSec() - info.dataTo;
   return (
-    <p className="data-note">
-      <Clock size={16} />
-      <span>
-        Data: {day(info.dataFrom)} to {day(info.dataTo - 1)} (
-        {info.manifest.counts.shields.toLocaleString()} deposits,{" "}
-        {info.manifest.counts.exits.toLocaleString()} withdrawals), verified on this device. Checks
-        warn you when your withdrawal is more than two days after the data ends.
-      </span>
-    </p>
+    <>
+      <p className="data-note">
+        <Clock size={16} />
+        <span>
+          Data: {day(info.dataFrom)} to {day(info.dataTo - 1)} (
+          {info.manifest.counts.shields.toLocaleString()} deposits,{" "}
+          {info.manifest.counts.exits.toLocaleString()} withdrawals), verified on this device.
+          Checks warn you when your withdrawal is more than two days after the data ends.
+        </span>
+      </p>
+      {age > STALE_DATA_SEC && (
+        <div className="status-banner warning" role="status">
+          <Alert size={18} />
+          <span className="status-text">
+            This data ended {Math.floor(age / 86_400)} days ago, so deposits made since then aren't
+            counted. Results for withdrawals made today may be out of date.
+          </span>
+        </div>
+      )}
+    </>
   );
 }

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
-import { parsePositiveZec, type OwnDeposit, type PreflightResult } from "@turnstile/core";
+import type { OwnDeposit, PreflightResult } from "@turnstile/core";
 import { DataStatus, href, ReasonList, VerdictBanner, type Route } from "../components";
-import { useEngine } from "../engine";
+import { useEngine, useLatest } from "../engine";
 import { dateTime, fromLocalInput, nowSec, toLocalInput, zec } from "../format";
 import { ArrowRight, ShieldCheck } from "../icons";
+import { destinationProblem, parseAmountInput, useForgetParams } from "../inputs";
 
 interface Errors {
   amount?: string;
   when?: string;
   deposit?: string;
   depositWhen?: string;
+  destination?: string;
   form?: string;
 }
 
@@ -18,14 +20,8 @@ interface Checked {
   amount: number;
   time: number;
   own?: OwnDeposit;
-}
-
-function parseAmount(value: string): { zat?: number; error?: string } {
-  try {
-    return { zat: parsePositiveZec(value) };
-  } catch (e) {
-    return { error: (e as Error).message.replace(/^Invalid ZEC amount "[^"]*": /, "") };
-  }
+  /** The form inputs this result was computed from. */
+  inputs: string;
 }
 
 export function CheckPage({ route }: { route: Route }): ReactNode {
@@ -42,31 +38,48 @@ export function CheckPage({ route }: { route: Route }): ReactNode {
   const [busy, setBusy] = useState(false);
   const [checked, setChecked] = useState<Checked>();
   const resultRef = useRef<HTMLHeadingElement>(null);
+  const latest = useLatest();
+  useForgetParams(route);
+  const inputs = JSON.stringify([amount, when, deposit, depositWhen, destination.trim()]);
 
   const run = async (e?: FormEvent): Promise<void> => {
     e?.preventDefault();
     const next: Errors = {};
-    const a = parseAmount(amount);
+    const a = parseAmountInput(amount);
     if (a.error) next.amount = a.error;
     const time = fromLocalInput(when);
     if (time === undefined) next.when = "Choose when you plan to withdraw.";
     let own: OwnDeposit | undefined;
     if (deposit.trim() || depositWhen) {
-      const d = parseAmount(deposit);
+      const d = parseAmountInput(deposit);
       const t = fromLocalInput(depositWhen);
       if (d.error) next.deposit = d.error;
       if (t === undefined) next.depositWhen = "When did you make this deposit?";
       if (d.zat !== undefined && t !== undefined) own = { amount: d.zat, time: t };
     }
+    if (own && time !== undefined && own.time >= time) {
+      next.depositWhen = "Your deposit has to be before the withdrawal.";
+    }
+    if (destination.trim()) {
+      const problem = await destinationProblem(destination);
+      if (problem) next.destination = problem;
+    }
     setErrors(next);
     if (Object.keys(next).length || a.zat === undefined || time === undefined) return;
     setBusy(true);
     try {
-      const result = await engine.check(
-        { amount: a.zat, time, ...(destination.trim() ? { destination: destination.trim() } : {}) },
-        own,
+      const { current, value: result } = await latest(
+        engine.check(
+          {
+            amount: a.zat,
+            time,
+            ...(destination.trim() ? { destination: destination.trim() } : {}),
+          },
+          own,
+        ),
       );
-      setChecked({ result, amount: a.zat, time, ...(own ? { own } : {}) });
+      if (!current) return;
+      setChecked({ result, amount: a.zat, time, ...(own ? { own } : {}), inputs });
     } catch (err) {
       setErrors({ form: (err as Error).message });
       setChecked(undefined);
@@ -205,14 +218,22 @@ export function CheckPage({ route }: { route: Route }): ReactNode {
                 className="input"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="t1..."
+                placeholder="t1..., t3... or tex1..."
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
-                aria-describedby="destination-hint"
+                aria-invalid={errors.destination ? true : undefined}
+                aria-describedby={
+                  errors.destination ? "destination-error destination-hint" : "destination-hint"
+                }
               />
               <span id="destination-hint" className="hint">
                 Hashed on this device and compared locally. It is never sent anywhere.
               </span>
+              {errors.destination && (
+                <span id="destination-error" className="error-text">
+                  {errors.destination}
+                </span>
+              )}
             </div>
 
             {errors.form && (
@@ -231,7 +252,11 @@ export function CheckPage({ route }: { route: Route }): ReactNode {
 
           <section aria-live="polite" aria-label="Result">
             {checked ? (
-              <Result checked={checked} headingRef={resultRef} />
+              <Result
+                checked={checked}
+                headingRef={resultRef}
+                outdated={checked.inputs !== inputs}
+              />
             ) : (
               <div className="card placeholder">
                 <ShieldCheck size={36} />
@@ -248,9 +273,11 @@ export function CheckPage({ route }: { route: Route }): ReactNode {
 function Result({
   checked,
   headingRef,
+  outdated,
 }: {
   checked: Checked;
   headingRef: RefObject<HTMLHeadingElement | null>;
+  outdated: boolean;
 }): ReactNode {
   const { result, amount, time, own } = checked;
   const planHref = href("/plan", {
@@ -263,6 +290,11 @@ function Result({
       <h2 ref={headingRef} tabIndex={-1} className="visually-hidden">
         Result for {zec(amount)} at {dateTime(time)}
       </h2>
+      {outdated && (
+        <p className="status-banner warning" role="status">
+          You've changed the inputs since this result. Check again to update it.
+        </p>
+      )}
       <VerdictBanner verdict={result.verdict} />
       <ReasonList reasons={result.reasons} />
       <dl className="facts">

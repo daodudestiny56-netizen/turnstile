@@ -1,22 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
-import { parsePositiveZec, planVerdict, type OwnDeposit } from "@turnstile/core";
+import { planVerdict, type OwnDeposit } from "@turnstile/core";
 import { DataStatus, ReasonList, Tag, VerdictBanner, type Route } from "../components";
-import { useEngine } from "../engine";
+import { useEngine, useLatest } from "../engine";
 import { dateTime, fromLocalInput, nowSec, toLocalInput, zec } from "../format";
 import { Download, Refresh, Route as RouteIcon } from "../icons";
+import { parseAmountInput, useForgetParams } from "../inputs";
 import type { PlanResult } from "../protocol";
 
 /** A fresh random seed per plan, so different people's schedules never line up. */
 function randomSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0]! % 2 ** 31;
-}
-
-function amountOrError(value: string): { zat?: number; error?: string } {
-  try {
-    return { zat: parsePositiveZec(value) };
-  } catch (e) {
-    return { error: (e as Error).message.replace(/^Invalid ZEC amount "[^"]*": /, "") };
-  }
 }
 
 export function PlanPage({ route }: { route: Route }): ReactNode {
@@ -32,28 +25,32 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
   });
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<PlanResult>();
+  const [result, setResult] = useState<PlanResult & { inputs: string }>();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const latest = useLatest();
+  useForgetParams(route);
+  const inputs = JSON.stringify([total, start, hours, legs, deposit, depositWhen]);
 
   const run = async (e?: FormEvent): Promise<void> => {
     e?.preventDefault();
-    const t = amountOrError(total);
+    const t = parseAmountInput(total);
     const startSec = fromLocalInput(start);
     let own: OwnDeposit | undefined;
     if (t.error) return setError(`Total: ${t.error}`);
     if (startSec === undefined) return setError("Choose when to start.");
     if (deposit.trim() || depositWhen) {
-      const d = amountOrError(deposit);
+      const d = parseAmountInput(deposit);
       const dt = fromLocalInput(depositWhen);
       if (d.error) return setError(`Deposit: ${d.error}`);
       if (dt === undefined) return setError("When did you make your deposit?");
       own = { amount: d.zat!, time: dt };
+      if (dt >= startSec) return setError("Your deposit has to be before the plan starts.");
     }
     setError(undefined);
     setBusy(true);
     try {
-      setResult(
-        await engine.plan({
+      const { current, value } = await latest(
+        engine.plan({
           total: t.zat!,
           start: startSec,
           horizonHours: Number(hours),
@@ -62,6 +59,7 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
           ...(own ? { own } : {}),
         }),
       );
+      if (current) setResult({ ...value, inputs });
     } catch (err) {
       setError((err as Error).message);
       setResult(undefined);
@@ -189,7 +187,12 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
 
           <section aria-live="polite" aria-label="Plan">
             {result ? (
-              <PlanView result={result} headingRef={headingRef} onReshuffle={() => void run()} />
+              <PlanView
+                result={result}
+                headingRef={headingRef}
+                outdated={result.inputs !== inputs}
+                onReshuffle={() => void run()}
+              />
             ) : (
               <div className="card placeholder">
                 <RouteIcon size={36} />
@@ -206,10 +209,12 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
 function PlanView({
   result,
   headingRef,
+  outdated,
   onReshuffle,
 }: {
   result: PlanResult;
   headingRef: RefObject<HTMLHeadingElement | null>;
+  outdated: boolean;
   onReshuffle: () => void;
 }): ReactNode {
   const { plan, ics } = result;
@@ -227,6 +232,11 @@ function PlanView({
       <h2 ref={headingRef} tabIndex={-1} className="visually-hidden">
         Exit plan for {zec(plan.options.total)}
       </h2>
+      {outdated && (
+        <p className="status-banner warning" role="status">
+          You've changed the inputs since this plan. Make a plan again to update it.
+        </p>
+      )}
       <div className="compare">
         <div className="card">
           <p className="hint">All at once</p>

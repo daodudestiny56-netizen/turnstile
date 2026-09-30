@@ -69,7 +69,9 @@ export type {
   Verdict,
 } from "./preflight.js";
 export {
+  chooseLegs,
   hourlyActivity,
+  linkedSums,
   measureDenominations,
   planExit,
   planToIcs,
@@ -78,3 +80,5 @@ export {
 export type { ExitPlan, PlanOptions, PlannedLeg } from "./planner.js";
 export { STANDARD_DENOMINATIONS, bestCommonAmount } from "./denominations.js";
 export type { Denomination } from "./denominations.js";
+export { bech32mDecode, bech32mEncode, parseAddress, toTex } from "./address.js";
+export type { AddressKind, ParsedAddress } from "./address.js";

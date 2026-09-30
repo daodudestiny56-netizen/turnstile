@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AddressSet, buildAddressSet } from "./integrity.js";
-import { planExit, planToIcs, planVerdict } from "./planner.js";
+import { DEFAULT_MATCH_PARAMS } from "./matcher.js";
+import { chooseLegs, linkedSums, planExit, planToIcs, planVerdict } from "./planner.js";
 import {
   CROWD_TARGET,
   PreflightRangeError,
@@ -15,6 +16,9 @@ const H = 3_600;
 const DAY = 86_400;
 const T0 = 1_782_864_000;
 const DATA_TO = T0 + 60 * DAY;
+// Real mainnet addresses (valid checksums): one that deposited, one that didn't.
+const REUSED = "t1SEgZvXCu3ceE42qrq5pCeSq7HbLjX8NJv";
+const FRESH = "t1Nsc8vCso3csJVoyX9YwvfwTuDHbCkZcjJ";
 
 /**
  * A synthetic snapshot ending at DATA_TO with, in its last week:
@@ -45,10 +49,7 @@ function snapshot(): SnapshotData {
 }
 
 async function context(): Promise<PreflightContext> {
-  return createPreflightContext(
-    snapshot(),
-    new AddressSet(await buildAddressSet(["t1ReusedAddress"])),
-  );
+  return createPreflightContext(snapshot(), new AddressSet(await buildAddressSet([REUSED])));
 }
 
 describe("preflight", () => {
@@ -118,16 +119,34 @@ describe("preflight", () => {
     const reused = await preflight(ctx, {
       amount: 100_000_000,
       time: DATA_TO - H,
-      destination: "t1ReusedAddress",
+      destination: REUSED,
     });
     expect(reused.verdict).toBe("red");
     expect(reused.reasons[0]?.code).toBe("address-reuse");
     const fresh = await preflight(ctx, {
       amount: 100_000_000,
       time: DATA_TO - H,
-      destination: "t1FreshAddress",
+      destination: FRESH,
     });
     expect(fresh.reasons.map((x) => x.code)).not.toContain("address-reuse");
+  });
+
+  it("sees through a TEX address to the t1 account it pays", async () => {
+    const t1 = "t1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC";
+    const tex = "tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte"; // ZIP 320 test vector for t1
+    const ctx = createPreflightContext(snapshot(), new AddressSet(await buildAddressSet([t1])));
+    const r = await preflight(ctx, { amount: 100_000_000, time: DATA_TO - H, destination: tex });
+    expect(r.reasons[0]).toMatchObject({ code: "address-reuse", severity: "red" });
+    expect(r.reasons[0]?.message).toContain(t1);
+  });
+
+  it("rejects an invalid or shielded destination with a reason", async () => {
+    const ctx = await context();
+    const at = { amount: 100_000_000, time: DATA_TO - H };
+    await expect(
+      preflight(ctx, { ...at, destination: "t1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yD" }),
+    ).rejects.toThrow(/checksum/);
+    await expect(preflight(ctx, { ...at, destination: "zs1abcdef" })).rejects.toThrow(/shielded/);
   });
 
   it("warns when the data is more than two days old, measuring the crowd at the data's end", async () => {
@@ -241,6 +260,63 @@ describe("planExit", () => {
     expect(plan.advice.join(" ")).toMatch(
       /remaining 0.1742 ZEC shielded: it's smaller than any amount/,
     );
+  });
+
+  it("never lets legs add up to the user's deposit minus fees", async () => {
+    // 4 ZEC deposited (plus two 15,000 zat fees); 1 ZEC is the only amount that blends in.
+    // Four 1 ZEC legs would sum to exactly the deposit minus fees, so the plan stops at three.
+    const plan = await planExit(await context(), {
+      total: 400_000_000,
+      start,
+      horizonHours: 36,
+      seed: 1,
+      own: { amount: 400_030_000, time: DATA_TO - 2 * H },
+    });
+    expect(plan.legs.map((l) => l.amount)).toEqual([100_000_000, 100_000_000, 100_000_000]);
+    expect(plan.advice.join(" ")).toMatch(/1 ZEC more stays shielded so that no group/);
+    expect(
+      linkedSums(
+        plan.legs.map((l) => l.amount),
+        plan.options.total,
+        own,
+        DEFAULT_MATCH_PARAMS,
+      ),
+    ).toEqual([]);
+  });
+
+  it("without a deposit, assumes it was the total plus fees", async () => {
+    const plan = await planExit(await context(), {
+      total: 400_000_000,
+      start,
+      horizonHours: 36,
+      seed: 1,
+    });
+    expect(plan.withdrawn).toBe(300_000_000);
+  });
+
+  it("finds sums within fees of the deposit, and ignores single legs and distant sums", () => {
+    const p = DEFAULT_MATCH_PARAMS;
+    const legs = [500_000_000, 500_000_000, 200_000_000];
+    const own = { amount: 1_000_030_000, time: 0 }; // 10 ZEC + fees
+    expect(linkedSums(legs, 0, own, p)).toEqual([1_000_000_000]); // the two 5 ZEC legs
+    expect(linkedSums([1_000_000_000], 0, own, p)).toEqual([]); // a single leg is preflight's job
+    expect(linkedSums(legs, 0, { amount: 1_000_030_001, time: 0 }, p)).toEqual([]); // not fee-shaped
+    expect(linkedSums(legs, 1_200_000_000, undefined, p)).toEqual([1_200_000_000]); // all three = total
+  });
+
+  it("chooses the most withdrawn, preferring mixed amounts on ties, under any rule", () => {
+    const pool = [500_000_000, 200_000_000, 100_000_000];
+    expect(chooseLegs(pool, 2_000_000_000, 4, () => true)).toEqual(Array(4).fill(500_000_000));
+    // 10 ZEC with 2 legs: 5+5 and nothing else reaches 10, so the tie-break can't apply.
+    expect(chooseLegs(pool, 1_000_000_000, 2, () => true)).toEqual([500_000_000, 500_000_000]);
+    // 4 ZEC with 3 legs: 2+2 and 2+1+1 both reach 4 and both repeat an amount twice, so the
+    // fewer legs win: 2+2.
+    expect(chooseLegs(pool, 400_000_000, 3, () => true)).toEqual([200_000_000, 200_000_000]);
+    // 7 ZEC with 3 legs: 5+2 (mixed, 2 legs) beats nothing else reaching 7.
+    expect(chooseLegs(pool, 700_000_000, 3, () => true)).toEqual([500_000_000, 200_000_000]);
+    // A rule forbidding any sum of exactly 7 ZEC forces 5+1 (6 ZEC).
+    const not7 = (xs: readonly number[]): boolean => xs.reduce((a, b) => a + b, 0) !== 700_000_000;
+    expect(chooseLegs(pool, 700_000_000, 3, not7)).toEqual([500_000_000, 100_000_000]);
   });
 
   it("exports calendar reminders", async () => {

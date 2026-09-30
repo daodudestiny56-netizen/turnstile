@@ -5,6 +5,7 @@
  * matcher's own standard (docs/methodology.md, section 6), the one that singled out 100% of
  * identifiable planted round trips and never blamed the wrong deposit.
  */
+import { parseAddress } from "./address.js";
 import { formatZat } from "./amount.js";
 import type { AddressSet } from "./integrity.js";
 import {
@@ -268,13 +269,21 @@ export async function preflight(
     );
   }
 
-  if (exit.destination && ctx.addresses && (await ctx.addresses.has(exit.destination))) {
-    add(
-      "address-reuse",
-      "red",
-      "This destination address funded a deposit into the shielded pool. Withdrawing back to it links " +
-        "the two directly, whatever the amount. Use an address that has never deposited.",
-    );
+  if (exit.destination !== undefined && exit.destination.trim() !== "") {
+    const parsed = await parseAddress(exit.destination);
+    if (!parsed.transparent) throw new PreflightRangeError(parsed.problem ?? "Invalid address");
+    // A tex1 address receives at its t1 form, so that is what must not have deposited.
+    if (ctx.addresses && (await ctx.addresses.has(parsed.transparent))) {
+      add(
+        "address-reuse",
+        "red",
+        (parsed.kind === "tex"
+          ? `This TEX address is the same account as ${parsed.transparent}, which `
+          : "This destination address ") +
+          "funded a deposit into the shielded pool. Withdrawing back to it links the two directly, " +
+          "whatever the amount. Use an address that has never deposited.",
+      );
+    }
   }
 
   if (staleness > STALE_AFTER_SEC) {

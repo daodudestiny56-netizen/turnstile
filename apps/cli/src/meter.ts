@@ -40,7 +40,7 @@ function paramsFrom(opts: MeterOptions): MatchParams {
     : { ...DEFAULT_MATCH_PARAMS, maxExpectedChance: Number(opts.maxChance) };
 }
 
-interface MatchData {
+export interface MatchData {
   shieldEvents: StoredEvent[];
   shields: ShieldPoint[];
   services: Set<number>;
@@ -50,7 +50,7 @@ interface MatchData {
   dataTo: number;
 }
 
-function loadMatchData(opts: MeterOptions): MatchData {
+export function loadMatchData(opts: MeterOptions): MatchData {
   const from = opts.from ?? (opts.days ? daysBefore(opts.to, Number(opts.days)) : opts.to);
   const days = dayRange(from, opts.to);
   const raw = new RawStore(opts.db);

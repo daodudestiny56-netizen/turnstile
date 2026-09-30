@@ -27,3 +27,24 @@ export type {
   PrecisionBand,
   Rate,
 } from "./meter.js";
+export {
+  SNAPSHOT_VERSION,
+  SnapshotFormatError,
+  canonicalizeSnapshot,
+  decodeSnapshot,
+  encodeSnapshot,
+} from "./snapshot.js";
+export type { SnapshotData } from "./snapshot.js";
+export {
+  ADDRESS_HASH_BYTES,
+  AddressSet,
+  MANIFEST_FORMAT,
+  SnapshotIntegrityError,
+  buildAddressSet,
+  gunzip,
+  hashAddress,
+  loadSnapshot,
+  parseManifest,
+  sha256Hex,
+} from "./integrity.js";
+export type { Manifest, ManifestFile, VerifiedSnapshot } from "./integrity.js";

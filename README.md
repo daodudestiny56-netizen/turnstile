@@ -57,7 +57,8 @@ A tool that warns about leaks must not leak. These are hard requirements, and ea
 - **Aggregates only.** The Leak Meter publishes statistics, never a list of which transactions are linked to
   which.
 - **Verifiable data.** Every data file comes with a hash, and anyone can rebuild it from public chain data
-  and get the same bytes.
+  and get the same bytes. The whole download is about 1 MB, and the app checks every hash before using any
+  of it: a single altered byte is rejected.
 
 ## What we've found so far
 
@@ -119,9 +120,9 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S0 | Foundation: monorepo, strict TypeScript, tests, CI | Done |
 | S1 | Data ingestion: 90 days of mainnet data, verified against source files | Done |
 | S2 | Boundary-event derivation: every shield and deshield, verified against a node | Done |
-| S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done, pending sign-off |
-| S4 | Verifiable snapshot file | Next |
-| S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Planned |
+| S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
+| S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
+| S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Next |
 | S6 | Web app | Planned |
 | S7 | NEAR Intents execution | Planned |
 | S9 | Docs, deployment, demo | Planned |
@@ -165,6 +166,9 @@ node apps/cli/dist/bin.js events --days 7 --to 2026-09-28
 node apps/cli/dist/bin.js meter --days 90 --to 2026-09-28      # the Leak Meter (needs 90 days ingested)
 node apps/cli/dist/bin.js validate --days 90 --to 2026-09-28   # planted trips and natural labels
 node scripts/verify-events.mjs      # checks 20 random events against a public Zcash node
+
+node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-28   # writes data/snapshot/
+node scripts/verify-snapshot.mjs    # verifies it in Node and headless Chromium
 ```
 
 Downloads are cached in `data/`, so each file is fetched once. Blockchair limits free downloads to about

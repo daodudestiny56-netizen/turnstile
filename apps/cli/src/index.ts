@@ -3,6 +3,7 @@ import { VERSION, formatZat, zecToZat } from "@turnstile/core";
 import { deriveCommand, eventsCommand } from "./events.js";
 import { countsCommand, ingestCommand } from "./ingest.js";
 import { meterCommand, validateCommand } from "./meter.js";
+import { snapshotCommand } from "./snapshot.js";
 
 const DEFAULT_DB = "data/turnstile.sqlite";
 const DEFAULT_CACHE = "data/cache/blockchair";
@@ -81,6 +82,11 @@ export function buildProgram(): Command {
     .option("--trips <n>", "planted trips per scenario", "200")
     .option("--seed <n>", "random seed", "2026")
     .action(validateCommand);
+
+  withRange(program.command("snapshot"))
+    .description("Build the public snapshot bundle (snapshot, address hashes, stats, manifest).")
+    .option("--out-dir <dir>", "output directory", "data/snapshot")
+    .action(snapshotCommand);
 
   return program;
 }

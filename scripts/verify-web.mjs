@@ -54,24 +54,40 @@ const types = {
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
 };
-const server = createServer((req, res) => {
-  let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  if (path.endsWith("/")) path += "index.html";
-  const file = normalize(join(dist, path));
-  if (!file.startsWith(dist)) return res.writeHead(403).end();
-  try {
-    res
-      .writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" })
-      .end(readFileSync(file));
-  } catch {
-    res.writeHead(404).end();
-  }
-});
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}/`;
+/**
+ * With `gzipEncoding`, .gz files go out with Content-Encoding: gzip, as Vite preview and many static
+ * hosts do; the browser then decompresses them before the app sees the bytes.
+ */
+async function serve(gzipEncoding) {
+  const server = createServer((req, res) => {
+    let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    if (path.endsWith("/")) path += "index.html";
+    const file = normalize(join(dist, path));
+    if (!file.startsWith(dist)) return res.writeHead(403).end();
+    try {
+      const headers = { "content-type": types[extname(file)] ?? "application/octet-stream" };
+      if (gzipEncoding && file.endsWith(".gz")) headers["content-encoding"] = "gzip";
+      res.writeHead(200, headers).end(readFileSync(file));
+    } catch {
+      res.writeHead(404).end();
+    }
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { server, base: `http://127.0.0.1:${server.address().port}/` };
+}
+const plain = await serve(false);
+const { server, base } = await serve(true);
 const browser = await chromium.launch();
 
 try {
+  // 0. The snapshot loads whether or not the host decompresses it in transit
+  const probe = await browser.newPage();
+  await probe.goto(plain.base + "#/check");
+  await probe.getByText("verified on this device").waitFor({ timeout: 15000 });
+  await probe.close();
+  check(true, "snapshot loads and verifies when served as-is and with Content-Encoding: gzip");
+
+  // 1-2. The journey (on the Content-Encoding server, like a real host)
   // 1-2. The journey
   const context = await browser.newContext({ timezoneId: "UTC", acceptDownloads: true });
   const page = await context.newPage();
@@ -211,6 +227,7 @@ try {
 } finally {
   await browser.close();
   server.close();
+  plain.server.close();
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);

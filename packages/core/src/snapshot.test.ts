@@ -162,6 +162,22 @@ describe("loadSnapshot", () => {
     expect(v.stats).toEqual({ evaluated: 0 });
   });
 
+  it("accepts a snapshot the host already decompressed (Content-Encoding: gzip)", async () => {
+    const { manifest, files } = await bundle();
+    const raw = await gunzip(files.snapshot);
+    const v = await loadSnapshot(manifest, { ...files, snapshot: raw });
+    expect(v.data.shields).toHaveLength(manifest.counts.shields);
+  });
+
+  it("rejects decompressed bytes that were altered", async () => {
+    const { manifest, files } = await bundle();
+    const raw = await gunzip(files.snapshot);
+    raw[raw.length >> 1]! ^= 1;
+    await expect(loadSnapshot(manifest, { ...files, snapshot: raw })).rejects.toThrow(
+      /matches neither/,
+    );
+  });
+
   it("uses the platform gunzip compatibly with Node's zlib", async () => {
     const raw = new TextEncoder().encode("hello snapshot");
     expect(await gunzip(new Uint8Array(gzipSync(raw)))).toEqual(raw);

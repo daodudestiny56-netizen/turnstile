@@ -90,25 +90,39 @@ export interface VerifiedSnapshot {
 /**
  * Verify every file against the manifest, then decode. Any mismatch, including a file that is
  * well-formed but altered, throws SnapshotIntegrityError before anything is used.
+ *
+ * The snapshot may arrive in either form. Many static hosts serve a `.gz` file with
+ * `Content-Encoding: gzip`, and the browser then hands over the already-decompressed bytes. Both
+ * forms are pinned by the manifest: compressed bytes must match the file hash and then the content
+ * hash; decompressed bytes must match the content hash directly.
  */
 export async function loadSnapshot(
   manifest: Manifest,
   files: { snapshot: Uint8Array; addresses: Uint8Array; stats: Uint8Array },
 ): Promise<VerifiedSnapshot> {
   const f = manifest.files;
-  await expectHash("snapshot.bin.gz", files.snapshot, f["snapshot.bin.gz"].sha256);
-  await expectHash("addresses.bin", files.addresses, f["addresses.bin"].sha256);
-  await expectHash("stats.json", files.stats, f["stats.json"].sha256);
-
-  let raw: Uint8Array;
-  try {
-    raw = await gunzip(files.snapshot);
-  } catch {
-    throw new SnapshotIntegrityError("snapshot.bin.gz does not decompress");
-  }
   const contentHash = f["snapshot.bin.gz"].contentSha256;
   if (!contentHash) throw new SnapshotIntegrityError("manifest lacks the snapshot content hash");
-  await expectHash("snapshot content", raw, contentHash);
+
+  let raw: Uint8Array;
+  const received = await sha256Hex(files.snapshot);
+  if (received === f["snapshot.bin.gz"].sha256) {
+    try {
+      raw = await gunzip(files.snapshot);
+    } catch {
+      throw new SnapshotIntegrityError("snapshot.bin.gz does not decompress");
+    }
+    await expectHash("snapshot content", raw, contentHash);
+  } else if (received === contentHash) {
+    raw = files.snapshot; // decompressed in transit
+  } else {
+    throw new SnapshotIntegrityError(
+      `snapshot.bin.gz: SHA-256 ${received} matches neither the manifest's file hash ` +
+        `${f["snapshot.bin.gz"].sha256} nor its content hash ${contentHash}`,
+    );
+  }
+  await expectHash("addresses.bin", files.addresses, f["addresses.bin"].sha256);
+  await expectHash("stats.json", files.stats, f["stats.json"].sha256);
 
   const data = decodeSnapshot(raw);
   const addresses = new AddressSet(files.addresses);

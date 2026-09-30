@@ -140,11 +140,22 @@ Known limitation: a tx that shields and deshields at once nets out and is under-
 `events(day, txid, height, time, kind, amount, addresses, tags, version, input_count, output_count, source_delta)` + `derive_days` (per-day counts and the config used) + `ingest_days(tbl, day, fingerprint, rows, duplicates)`.
 See design doc §5.2.
 
-### 7.4 Snapshot
+### 7.4 Snapshot (built in S4)
 
-Last 90 days of non-batch SHIELD/DESHIELD events, columnar + delta-encoded + gzip, addresses as salted-constant
-hashes in a separate optional file. `manifest.json` = `{fromDay, toDay, eventCount, sha256, codecVersion, createdAt}`.
-Target ≤ 15 MB.
+`turnstile snapshot` writes four files; every client downloads the same ones:
+
+| File | Contents | Size (Jul 1 - Sep 28) |
+|---|---|---|
+| `snapshot.bin.gz` | Columnar, delta-encoded varints: every shield (time, amount, entity), the service entity ids, every non-batch exit (time, amount) | 787 KB (1,028 KB raw) |
+| `addresses.bin` | Sorted 8-byte truncated SHA-256 hashes of every address that funded a shield (domain-separated) | 290 KB |
+| `stats.json` | The Leak Meter result (MeterStats) | 9 KB |
+| `manifest.json` | Counts, sizes and SHA-256 of each file, plus the SHA-256 of the uncompressed snapshot | 1 KB |
+
+The encoding is canonical (sorted, entities renumbered by first appearance), so the same events always
+give the same bytes. The reproducible fingerprint is the hash of the **uncompressed** content, because
+gzip output can differ between zlib builds; the compressed file's hash only checks the download. The
+manifest carries no timestamp for the same reason. The loader verifies every hash and every count before
+using anything.
 
 ## 8. Functional requirements
 
@@ -280,12 +291,12 @@ Labels are computed on the fly and reported as aggregates only (P7).
 - [x] `turnstile meter --days 90` prints headline + baselines in < 60 s (5 s)
 
 ### S4 — Snapshot
-**Build:** columnar codec (encode/decode), address-hash side file, manifest with sha256, `turnstile snapshot`; browser-compatible loader that verifies the hash.
+**Build:** canonical columnar codec in `@turnstile/core` (encode/decode), address-hash side file, manifest with content and file hashes, `turnstile snapshot`; a loader using only Web APIs (crypto.subtle, DecompressionStream) that verifies everything before decoding. Independent check: `scripts/verify-snapshot.mjs`.
 **Acceptance:**
-- [ ] Encode → decode round-trip equality test
-- [ ] Two builds from the same days → identical sha256
-- [ ] Snapshot ≤ 15 MB; loads in Node and in a headless browser < 3 s
-- [ ] Tampered file is rejected by the loader
+- [x] Encode → decode round-trip equality test (unit tests, and on the real snapshot: decode then encode reproduces all 1,052,319 bytes)
+- [x] Two builds from the same days → identical sha256 (all four files byte-identical)
+- [x] Snapshot ≤ 15 MB; loads in Node and in a headless browser < 3 s (1.06 MB total; Node 337 ms, Chromium 512 ms including fetch, verify, decode and index)
+- [x] Tampered file is rejected by the loader (one flipped byte in any file; altered content with a forged file hash; wrong counts)
 
 ### S5 — Pre-flight, reuse detector, planner (core + CLI)
 **Build:** `scoreExit`, address-reuse check, `planExit` (seeded), `.ics` export; CLI `turnstile check 3.1742 --at ... --to t1...`, `turnstile plan 3.1742 --hours 72 --k 50`.

@@ -199,6 +199,30 @@ export function feeShapedEntities(
   return out;
 }
 
+export interface Candidate extends ShieldPoint {
+  /** Matching weight (see MatchParams). */
+  weight: number;
+  /** shield amount − exit amount is an exact multiple of the fee unit. */
+  feeShaped: boolean;
+}
+
+/** Every candidate shield for an exit, heaviest first. */
+export function listCandidates(
+  index: ShieldIndex,
+  exit: ExitQuery,
+  params: MatchParams = DEFAULT_MATCH_PARAMS,
+  direction: Direction = "forward",
+): Candidate[] {
+  const out: Candidate[] = [];
+  index.forEachInAmountRange(exit.amount, exit.amount + params.feeMaxZat, (s) => {
+    const weight = candidateWeight(s, exit, params, direction);
+    if (weight > 0) {
+      out.push({ ...s, weight, feeShaped: (s.amount - exit.amount) % params.feeUnitZat === 0 });
+    }
+  });
+  return out.sort((a, b) => b.weight - a.weight || a.time - b.time);
+}
+
 /**
  * Score one exit against the index. `extra` shields are considered alongside the index (used to
  * plant synthetic trips without rebuilding it).

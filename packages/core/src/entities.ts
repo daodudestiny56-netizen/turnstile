@@ -49,3 +49,14 @@ export function clusterEntities(addressLists: readonly (readonly string[])[]): n
     return id;
   });
 }
+
+/**
+ * Entities that shielded more than `minShields` times: services, not people. Over a 90-day window the
+ * default of 100 means more than one deposit a day, every day; 19 of 26,476 entities in Jul-Sep 2026
+ * qualify, and together they made 45% of all shields (docs/methodology.md, section 6.1).
+ */
+export function serviceEntities(entities: readonly number[], minShields = 100): Set<number> {
+  const counts = new Map<number, number>();
+  for (const e of entities) counts.set(e, (counts.get(e) ?? 0) + 1);
+  return new Set([...counts].filter(([, n]) => n > minShields).map(([e]) => e));
+}

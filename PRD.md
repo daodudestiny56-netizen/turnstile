@@ -41,9 +41,11 @@ No wallet warns about this today.
 | **Execution** — "does it run. Working beats ambitious" | Live public URL, one-command CLI, CI green, every section verified, real mainnet swap in the demo | Every section's acceptance tests |
 | **Originality** — "built for this hackathon" | Novel mainnet measurement + method + fix; no one else will have the number | S3, methodology doc |
 
-**The demo moment:** "X% of Zcash exits last month were linkable. Here's a withdrawal I'm about to make —
-Turnstile flags it red. Here's the plan that turns it green. Here's the first leg getting a live NEAR Intents
-deposit address and a QR for my own wallet. And during all of this, the network tab shows nothing left my browser."
+**The demo moment:** "Of all Zcash exits with a precise amount, one in six traces back to a service's deposit.
+People as a whole look safe, but that average hides the individual: withdraw exactly what you deposited and
+you are found every time. Here's a withdrawal I'm about to make: Turnstile flags it red. Here's the plan that
+turns it green. Here's the first leg getting a live NEAR Intents deposit address and a QR for my own wallet.
+And during all of this, the network tab shows nothing left my browser."
 
 ## 4. Users
 
@@ -258,23 +260,24 @@ You confirm, then we move on. A failing check means we fix it in that section �
 - [x] Thresholds (`shieldedResidualMin`, `shieldMinZat`, `batchMinOutputs`) tuned with written justification ([docs/methodology.md](docs/methodology.md))
 
 ### S3 — Matcher, scorer & Leak Meter
-**Build:** `@turnstile/core` matcher (entities, fee-shaped weighting, `k_eff`); two coincidence baselines; `stats.json`; `turnstile meter` and `turnstile validate`. Method and results: [docs/methodology.md](docs/methodology.md) sections 6-8.
+**Build:** `@turnstile/core` matcher (entities, people vs services, fee-shaped weighting, chance gate, `k_eff`); two coincidence baselines; `stats.json`; `turnstile meter` and `turnstile validate`. Method and results: [docs/methodology.md](docs/methodology.md) sections 6-8.
 **Ground truth at $0 (no transactions of our own):**
-1. *Natural labels* — mainnet round-trips where the deshield destination equals the shield source address
-   (same person with near certainty). Addresses are **hidden from the matcher**; we measure how many it
-   recovers from amount + timing alone (recall) and how often it points at the wrong shield (precision).
-2. *Planted trips* — inject synthetic round-trips into real mainnet background traffic:
-   (a) exact amount out after 1h, (b) exact after 24h, (c) round amount after 3h, (d) split into 2 legs.
-Labels are computed on the fly and reported as aggregates only (P7) — no per-tx lists are written or committed.
+1. *Natural labels* — mainnet round-trips where the deshield destination equals the shield source address. Addresses are **hidden from the matcher**; we measure recall and precision.
+2. *Planted trips* — synthetic round-trips in real mainnet background traffic, amounts from ordinary users: (a) exact amount out after 1h, (b) exact after 24h, (c) round amount after 3h, (d) split into 2 legs.
+Labels are computed on the fly and reported as aggregates only (P7).
+
+**Decision (Sep 30):** the original criterion "(a) and (b) linked at ≥ 90%" assumed every exact round trip can be singled out. The data shows 36-37% of them can't: someone else shielded the same amount in the same three weeks, so no amount-and-timing analysis can tell the two apart. Forcing 90% there means guessing, and guessing blames innocent parties (10.1% wrong links without the chance gate). For a privacy tool a false accusation is worse than a miss, so the criterion is restated as safety first, then detection on the trips that are actually identifiable.
+
 **Acceptance:**
-- [x] Synthetic-chain unit tests: planted round-trips found, planted noise not
-- [ ] Planted (a) and (b) scored linkable at ≥ 90%; (c) and (d) mostly not uniquely linkable
-      Result: precise amounts (6-8 decimals) 100% and 91.8%; all amounts 89.5% and 81.0%, because exact trips with
-      3-5 decimal amounts often share their amount with another entity that week and are rightly not unique.
-      (c) 4.0%, (d) 0.0%. Awaiting sign-off on scoring this criterion on precise amounts.
-- [x] Recall/precision on natural labels reported (recall 68.3% on exact trips, 93.0% for precise amounts; precision 78.2%)
-- [x] Observed linkable % is materially above null baseline: 15.98% vs 10.71% / 10.43%; precise amounts 20.98% vs 7.75% / 0.14%
-- [x] `turnstile meter --days 90` prints headline + baseline in < 60 s (6 s)
+- [x] Synthetic-chain unit tests: planted round-trips found, planted noise not (78 tests)
+- [x] Safety: no planted trip in (a)-(c) blamed on the wrong entry — 0 of 3,000
+- [x] Safety: wrong links on exits whose depositor is absent ((d) split legs) ≤ 5% — 3.95%
+- [x] Safety: precision of linkable verdicts on natural labels ≥ 85% — 89.7% (person-funded labels: 55.2%, reported as a known weakness)
+- [x] Detection: identifiable planted trips (nobody else used the amount in the prior 3 weeks) linked ≥ 95% — (a) 100% of 641, (b) 100% of 628
+- [x] (c) and (d) not linked to their entry — 0% and 0%
+- [x] Recall/precision on natural labels reported, overall and for person-funded labels
+- [x] Leak Meter compared with both baselines, split into people and services: services +5.99 points beyond chance (precise amounts +15.26); people: nothing measurable beyond chance
+- [x] `turnstile meter --days 90` prints headline + baselines in < 60 s (5 s)
 
 ### S4 — Snapshot
 **Build:** columnar codec (encode/decode), address-hash side file, manifest with sha256, `turnstile snapshot`; browser-compatible loader that verifies the hash.

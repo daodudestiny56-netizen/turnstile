@@ -34,6 +34,16 @@ export interface MatchParams {
   offUnitWeight: number;
   /** An exit is linkable if one entity holds at least this share of the weight. */
   linkableShare: number;
+  /**
+   * Background period, just before the search window (after it, in reverse), used to estimate how
+   * many parties match this exact amount by chance. The true funder cannot be in it.
+   */
+  backgroundSec: number;
+  /**
+   * An exit is only linkable when its amount attracts at most this many chance fee-shaped matches per
+   * search window. One match on an amount that others often use proves nothing.
+   */
+  maxExpectedChance: number;
 }
 
 /** Calibrated on 8,572 same-address round trips, Jul–Sep 2026 (docs/methodology.md). */
@@ -47,7 +57,17 @@ export const DEFAULT_MATCH_PARAMS: MatchParams = {
   // ~0.08x, so an off-unit candidate carries ~2e-5 of a fee-shaped one. See docs/methodology.md.
   offUnitWeight: 0.00002,
   linkableShare: 0.9,
+  backgroundSec: 14 * 86_400,
+  // Calibrated in docs/methodology.md section 7: with 0 (nobody else used this amount in the
+  // background), linkable verdicts on natural labels are right 89.7% of the time; allowing even one
+  // chance party drops that to 87.6% and doubles wrong links on exits that have no true funder.
+  maxExpectedChance: 0,
 };
+
+/** History (and, for the reverse baseline, future) an exit needs on each side to be scored. */
+export function historyNeededSec(params: MatchParams = DEFAULT_MATCH_PARAMS): number {
+  return params.windowSec + params.backgroundSec;
+}
 
 /**
  * "forward": entries before the exit (the real question).
@@ -68,9 +88,11 @@ export interface ExitScore {
   topShare: number;
   /** The top entity has a candidate whose difference is an exact fee multiple. */
   topFeeShaped: boolean;
+  /** Chance fee-shaped matches this amount attracts per search window (see backgroundSec). */
+  expectedChance: number;
   /**
-   * The top entity has a fee-shaped candidate and is either the only candidate entity or holds at
-   * least linkableShare of the weight.
+   * The top entity has a fee-shaped candidate, is either the only candidate entity or holds at least
+   * linkableShare of the weight, and the amount is one that rarely matches by chance.
    */
   linkable: boolean;
 }
@@ -117,13 +139,64 @@ function candidateWeight(
   p: MatchParams,
   dir: Direction,
 ): number {
+  // Strictly before (forward) or strictly after (reverse). A shield in the same block as the exit
+  // can't fund it (a note is spendable only from the next block), so both directions exclude it.
   const dt = dir === "forward" ? exit.time - shield.time : shield.time - exit.time;
-  if (dir === "forward" ? dt <= 0 : dt < 0) return 0;
-  if (dt > p.windowSec) return 0;
+  if (dt <= 0 || dt > p.windowSec) return 0;
   const diff = shield.amount - exit.amount;
   if (diff < 0 || diff > p.feeMaxZat) return 0;
   const amountWeight = diff % p.feeUnitZat === 0 ? 1 : p.offUnitWeight;
   return amountWeight / (1 + dt / p.tauSec);
+}
+
+/**
+ * Expected number of parties that match this exit's exact amount by chance in one search window:
+ * distinct entities with a fee-shaped shield for this amount during the background period, scaled
+ * from its length to the window's. The background sits just outside the search window (before it
+ * going forward, after it in reverse), so the true funder is never counted.
+ */
+export function expectedChanceMatches(
+  index: ShieldIndex,
+  exit: ExitQuery,
+  params: MatchParams = DEFAULT_MATCH_PARAMS,
+  direction: Direction = "forward",
+): number {
+  const [from, to] =
+    direction === "forward"
+      ? [exit.time - params.windowSec - params.backgroundSec, exit.time - params.windowSec]
+      : [exit.time + params.windowSec, exit.time + params.windowSec + params.backgroundSec];
+  const entities = new Set<number>();
+  index.forEachInAmountRange(exit.amount, exit.amount + params.feeMaxZat, (s) => {
+    if (s.time > from && s.time <= to && (s.amount - exit.amount) % params.feeUnitZat === 0) {
+      entities.add(s.entity);
+    }
+  });
+  return (entities.size * params.windowSec) / params.backgroundSec;
+}
+
+/**
+ * Entities with at least one fee-shaped candidate for this exit: the parties an observer could not
+ * tell apart from the real funder by amount and timing.
+ */
+export function feeShapedEntities(
+  index: ShieldIndex,
+  exit: ExitQuery,
+  params: MatchParams = DEFAULT_MATCH_PARAMS,
+  direction: Direction = "forward",
+  extra: readonly ShieldPoint[] = [],
+): Set<number> {
+  const out = new Set<number>();
+  const consider = (s: ShieldPoint): void => {
+    if (
+      candidateWeight(s, exit, params, direction) > 0 &&
+      (s.amount - exit.amount) % params.feeUnitZat === 0
+    ) {
+      out.add(s.entity);
+    }
+  };
+  index.forEachInAmountRange(exit.amount, exit.amount + params.feeMaxZat, consider);
+  for (const s of extra) consider(s);
+  return out;
 }
 
 /**
@@ -159,6 +232,7 @@ export function scoreExit(
       topEntity: -1,
       topShare: 0,
       topFeeShaped: false,
+      expectedChance: 0,
       linkable: false,
     };
   }
@@ -178,6 +252,7 @@ export function scoreExit(
     entropy -= share * Math.log(share);
   }
   const topShare = topWeight / total;
+  const expectedChance = expectedChanceMatches(index, exit, params, direction);
   return {
     candidates,
     entities: byEntity.size,
@@ -185,8 +260,12 @@ export function scoreExit(
     topEntity,
     topShare,
     topFeeShaped: feeShaped.has(topEntity),
-    // A coincidental match rarely differs by an exact fee multiple (1 in 5,000); a real round trip
-    // usually does (91.8% of same-address trips). Requiring it makes the verdict a lower bound.
-    linkable: feeShaped.has(topEntity) && (byEntity.size === 1 || topShare >= params.linkableShare),
+    expectedChance,
+    // A real round trip usually differs by an exact fee multiple (91.8% of same-address trips), so
+    // that is required; and a single match only counts on an amount that rarely matches by chance.
+    linkable:
+      feeShaped.has(topEntity) &&
+      (byEntity.size === 1 || topShare >= params.linkableShare) &&
+      expectedChance <= params.maxExpectedChance,
   };
 }

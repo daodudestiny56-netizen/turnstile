@@ -1,7 +1,9 @@
 import {
   DEFAULT_MATCH_PARAMS,
+  historyNeededSec,
   scoreExit,
   type ExitQuery,
+  type ExitScore,
   type MatchParams,
   type ShieldIndex,
 } from "./matcher.js";
@@ -37,45 +39,10 @@ export function crowdBucket(entities: number): CrowdBucket {
   return "101+";
 }
 
-export interface Rate {
-  linkable: number;
-  total: number;
-  /** linkable / total, 0 when total is 0. */
-  rate: number;
-}
-
-export interface Split {
-  observed: Rate;
-  baseline: Rate;
-  shiftedBaseline: Rate;
-}
-
-export interface MeterStats {
-  params: MatchParams;
-  /** Exits scored (both windows fully inside the data). */
-  evaluated: number;
-  /** Real question: an entry before the exit singles out one entity. */
-  observed: Rate;
-  /**
-   * Coincidence, measured two ways. "Reversed": the same test against entries after the exit, which
-   * cannot have funded it (this also catches services that exit and later re-enter the same amount,
-   * so it overstates chance). "Shifted": the exit amount moved by 0.05-0.5 ZEC, keeping its roundness
-   * and timing but removing any true match.
-   */
-  baseline: Rate;
-  shiftedBaseline: Rate;
-  /** observed.rate minus the larger baseline: a conservative share linkable beyond coincidence. */
-  excess: number;
-  /** Exits by number of distinct candidate entities (forward). */
-  crowd: Record<CrowdBucket, number>;
-  byPrecision: Record<PrecisionBand, Split>;
-  byMonth: Record<string, Split>;
-}
-
 /**
- * Move an exit amount by 5-50 hundredths of a ZEC (deterministic per exit). Multiples of 0.01 ZEC keep
- * the amount's decimal precision and its remainder modulo the fee unit, so chance fee-shaped matches
- * stay as likely as before while the true funder no longer matches.
+ * Move an exit amount by 5-50 hundredths of a ZEC (deterministic per exit). Multiples of 0.01 ZEC
+ * keep the amount's decimal precision and its remainder modulo the fee unit, so chance fee-shaped
+ * matches stay as likely as before while the true funder no longer matches.
  */
 export function shiftedExit(exit: ExitQuery, i: number): ExitQuery {
   const steps = 5 + ((Math.imul(i + 1, 2654435761) >>> 0) % 46);
@@ -84,12 +51,105 @@ export function shiftedExit(exit: ExitQuery, i: number): ExitQuery {
   return { time: exit.time, amount };
 }
 
-function rate(linkable: number, total: number): Rate {
-  return { linkable, total, rate: total === 0 ? 0 : linkable / total };
+export interface Rate {
+  linkable: number;
+  total: number;
+  /** linkable / total, 0 when total is 0. */
+  rate: number;
+}
+
+/** One measurement against both coincidence baselines. */
+export interface Comparison {
+  /** Real question: an entry before the exit singles out one entity. */
+  observed: Rate;
+  /**
+   * Entries after the exit, which cannot have funded it. Also catches parties that exit and later
+   * re-enter the same amount, which is real behavior, so it overstates chance.
+   */
+  reversed: Rate;
+  /** The exit amount moved by 0.05-0.5 ZEC: same precision and timing, no true match. */
+  shifted: Rate;
+  /** observed minus the larger baseline: a conservative share linkable beyond coincidence. */
+  excess: number;
+}
+
+export interface Breakdown extends Comparison {
+  byPrecision: Record<string, Comparison>;
+  byMonth: Record<string, Comparison>;
+}
+
+export interface MeterStats {
+  params: MatchParams;
+  /** Exits scored (both windows fully inside the data). */
+  evaluated: number;
+  /** Entities treated as services (see serviceEntities). */
+  serviceEntities: number;
+  /** Every linkable verdict, whoever it points at. */
+  all: Breakdown;
+  /** Verdicts that point at a person-scale entity: the headline. */
+  people: Breakdown;
+  /** Verdicts that point at a service: its own flows are traceable. */
+  services: Breakdown;
+  /** Exits by number of distinct candidate entities (forward). */
+  crowd: Record<CrowdBucket, number>;
+}
+
+class Tally {
+  n = 0;
+  obs = 0;
+  rev = 0;
+  sh = 0;
+  add(obs: boolean, rev: boolean, sh: boolean): void {
+    this.n++;
+    if (obs) this.obs++;
+    if (rev) this.rev++;
+    if (sh) this.sh++;
+  }
+  comparison(): Comparison {
+    const r = (k: number): Rate => ({ linkable: k, total: this.n, rate: this.n ? k / this.n : 0 });
+    const observed = r(this.obs);
+    const reversed = r(this.rev);
+    const shifted = r(this.sh);
+    return {
+      observed,
+      reversed,
+      shifted,
+      excess: observed.rate - Math.max(reversed.rate, shifted.rate),
+    };
+  }
+}
+
+class BreakdownTally {
+  readonly total = new Tally();
+  readonly precision = new Map<string, Tally>();
+  readonly month = new Map<string, Tally>();
+  add(exit: ExitQuery, obs: boolean, rev: boolean, sh: boolean): void {
+    this.total.add(obs, rev, sh);
+    const get = (m: Map<string, Tally>, k: string): Tally => {
+      let t = m.get(k);
+      if (!t) m.set(k, (t = new Tally()));
+      return t;
+    };
+    get(this.precision, precisionBand(exit.amount)).add(obs, rev, sh);
+    get(this.month, new Date(exit.time * 1000).toISOString().slice(0, 7)).add(obs, rev, sh);
+  }
+  result(): Breakdown {
+    const map = (m: Map<string, Tally>): Record<string, Comparison> =>
+      Object.fromEntries(
+        [...m].sort(([a], [b]) => a.localeCompare(b)).map(([k, t]) => [k, t.comparison()]),
+      );
+    return {
+      ...this.total.comparison(),
+      byPrecision: map(this.precision),
+      byMonth: map(this.month),
+    };
+  }
 }
 
 /**
- * Leak Meter: score every exit whose forward and reverse windows both lie inside [dataFrom, dataTo].
+ * Leak Meter: score every exit whose search and background windows, before and after it, lie inside
+ * [dataFrom, dataTo],
+ * against both baselines, and split verdicts by whether they point at a person or a service.
  */
 export function meterStats(
   index: ShieldIndex,
@@ -97,67 +157,36 @@ export function meterStats(
   dataFrom: number,
   dataTo: number,
   params: MatchParams = DEFAULT_MATCH_PARAMS,
+  services: ReadonlySet<number> = new Set(),
 ): MeterStats {
   const crowd = Object.fromEntries(CROWD_BUCKETS.map((b) => [b, 0])) as Record<CrowdBucket, number>;
-  const tally = new Map<string, { obs: number; base: number; sh: number; n: number }>();
-  const bump = (key: string, obs: boolean, base: boolean, sh: boolean): void => {
-    const t = tally.get(key) ?? { obs: 0, base: 0, sh: 0, n: 0 };
-    t.n++;
-    if (obs) t.obs++;
-    if (base) t.base++;
-    if (sh) t.sh++;
-    tally.set(key, t);
-  };
+  const all = new BreakdownTally();
+  const people = new BreakdownTally();
+  const serv = new BreakdownTally();
+  const isService = (s: ExitScore): boolean => s.linkable && services.has(s.topEntity);
+  const isPerson = (s: ExitScore): boolean => s.linkable && !services.has(s.topEntity);
 
   let evaluated = 0;
-  let observed = 0;
-  let baseline = 0;
-  let shifted = 0;
   for (const exit of exits) {
-    if (exit.time - params.windowSec < dataFrom || exit.time + params.windowSec > dataTo) continue;
+    const need = historyNeededSec(params);
+    if (exit.time - need < dataFrom || exit.time + need > dataTo) continue;
     const fwd = scoreExit(index, exit, params, "forward");
     const rev = scoreExit(index, exit, params, "reverse");
     const sh = scoreExit(index, shiftedExit(exit, evaluated), params, "forward");
     evaluated++;
-    if (fwd.linkable) observed++;
-    if (rev.linkable) baseline++;
-    if (sh.linkable) shifted++;
     crowd[crowdBucket(fwd.entities)]++;
-    bump(`p:${precisionBand(exit.amount)}`, fwd.linkable, rev.linkable, sh.linkable);
-    bump(
-      `m:${new Date(exit.time * 1000).toISOString().slice(0, 7)}`,
-      fwd.linkable,
-      rev.linkable,
-      sh.linkable,
-    );
+    all.add(exit, fwd.linkable, rev.linkable, sh.linkable);
+    people.add(exit, isPerson(fwd), isPerson(rev), isPerson(sh));
+    serv.add(exit, isService(fwd), isService(rev), isService(sh));
   }
 
-  const split = (prefix: string): Record<string, Split> =>
-    Object.fromEntries(
-      [...tally]
-        .filter(([k]) => k.startsWith(prefix))
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, t]) => [
-          k.slice(2),
-          {
-            observed: rate(t.obs, t.n),
-            baseline: rate(t.base, t.n),
-            shiftedBaseline: rate(t.sh, t.n),
-          },
-        ]),
-    );
-  const obs = rate(observed, evaluated);
-  const base = rate(baseline, evaluated);
-  const shiftedBase = rate(shifted, evaluated);
   return {
     params,
     evaluated,
-    observed: obs,
-    baseline: base,
-    shiftedBaseline: shiftedBase,
-    excess: obs.rate - Math.max(base.rate, shiftedBase.rate),
+    serviceEntities: services.size,
+    all: all.result(),
+    people: people.result(),
+    services: serv.result(),
     crowd,
-    byPrecision: split("p:") as MeterStats["byPrecision"],
-    byMonth: split("m:"),
   };
 }

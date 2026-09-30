@@ -128,107 +128,160 @@ Orchard and Ironwood, including a deshield that draws from Orchard and Ironwood 
   - Deshields went to 36,948 distinct addresses in September, and those under 0.01 ZEC grew from about
     1,500 a month to 10,398. That is broad-based activity, not one actor.
 
-A service that shields thousands of times inflates the apparent crowd any single exit hides in. The
-matcher (PRD section S3) has to account for that rather than count every shield as an independent
-person.
+A service that shields thousands of times would inflate the apparent crowd any single exit hides in.
+The matcher counts entities, not shields, and reports services separately (section 6.1).
 
 ## 6. Matching exits to entries
 
 For every exit (a deshield that is not a batch payout), Turnstile asks what an observer would: which
-earlier shields could have funded it?
+earlier shields could have funded it, and can one of them be singled out?
 
-### 6.1 Candidates
+### 6.1 Entities, people and services
 
-A shield is a candidate for an exit if it happened within the 7 days before it and
-`0 ≤ shield amount − exit amount ≤ 200,000` zat, which is the room fees take up. Shields are grouped
-into **entities** with the common-input-ownership heuristic: addresses spent together in one
-transaction belong to one party. The crowd is counted in entities, so a service that shielded 11,721
-times in September is one member of it, not 11,721. The 85,560 shields form 26,476 entities.
+Shields are grouped into **entities** with the common-input-ownership heuristic: addresses spent
+together in one transaction belong to one party. The 85,560 shields form 26,476 entities, and the crowd
+is always counted in entities, not transactions.
 
-### 6.2 Weights
+The size distribution has a sharp tail:
 
-Each candidate gets a weight `amount weight / (1 + Δt / 1 hour)`, summed per entity:
+| Shields per entity (90 days) | Entities | Shields |
+|---|---|---|
+| 1 | 20,285 | 20,285 |
+| 2–5 | 5,306 | 13,732 |
+| 6–20 | 722 | 6,739 |
+| 21–100 | 144 | 5,704 |
+| more than 100 | **19** | **39,100** |
 
-- **Time.** 1 hour is close to the median delay of the natural round trips (1.2 hours, section 7); the
-  p90 is 53 hours, so the weight falls off slowly rather than cutting off.
+An entity with more than 100 shields in 90 days deposits more than once a day, every day. No person
+does that. These 19 are treated as **services**; they made 45.7% of all shields. Every result is
+reported separately for exits traced to people and exits traced to services.
+
+### 6.2 Candidates and weights
+
+A shield is a candidate for an exit if it happened in the 7 days before it (not in the same block, which
+can't fund it) and `0 ≤ shield amount − exit amount ≤ 200,000` zat, the room fees take up. Each
+candidate is weighted `amount weight / (1 + Δt / 1 hour)`, summed per entity:
+
+- **Time.** The median delay of natural round trips is 1.2 hours and the p90 is 53 hours, so the weight
+  favors recent entries without cutting off older ones.
 - **Amount.** 91.8% of exact natural round trips differ by a multiple of 5,000 zat, the ZIP-317 fee unit
-  (2,298 of 2,503). A chance match is spread evenly over the ~200,000 possible differences. Per
-  candidate, a fee-shaped difference is therefore about 4,500 times likelier to come from the real
-  funder than from chance, and any other difference about 0.08 times. Off-unit candidates get a
-  relative weight of 0.00002. They still count toward the size of the crowd but barely dilute a
-  fee-shaped match.
+  (2,298 of 2,503). A chance match is spread evenly over ~200,000 possible differences. Per candidate,
+  a fee-shaped difference is about 4,500 times likelier to come from the real funder than from chance,
+  and any other difference about 0.08 times, so off-unit candidates get a relative weight of 0.00002.
 
-### 6.3 Verdict
+### 6.3 The chance gate
 
-An exit is **linkable** when the top entity has a fee-shaped candidate and either is the only
-candidate entity or holds at least 90% of the weight. Requiring the fee shape gives up the ~8% of true
-round trips whose fees are non-standard, so every figure below is a lower bound.
+Thousands of people shield "1 ZEC plus a standard fee". A single fee-shaped match on an amount like
+that proves nothing. For each exit, Turnstile therefore estimates how many parties match its exact
+amount by chance: the distinct entities with a fee-shaped shield for that amount in the **14 days
+before the search window**. The true funder can't be there. Looking only at the past, this works
+identically for the Leak Meter and for a live pre-flight check.
 
-### 6.4 Two measures of coincidence
+### 6.4 Verdict
 
-A matcher run over any data finds some unique matches by chance. Turnstile measures that rate twice
-and reports its result against the larger of the two:
+An exit is **linkable** when all of these hold:
 
-- **Reversed time:** the same test against shields in the 7 days *after* the exit, which cannot have
-  funded it. This also counts services that exit and later re-enter the same amount, which is real
-  behavior, so it overstates chance.
+1. the top entity has a fee-shaped candidate;
+2. it is the only candidate entity, or holds at least 90% of the weight;
+3. nobody used this amount (plus fees) in the background period.
+
+The threshold in (3) was chosen for accuracy, not for the size of the result (section 7.1). Condition
+(1) gives up the ~8% of true round trips with non-standard fees, so every figure is a lower bound.
+
+### 6.5 Two measures of coincidence
+
+Turnstile measures chance twice and reports its result against the larger of the two:
+
+- **Reversed time:** the same test against shields in the 7 days *after* the exit (with its own
+  background after that), which cannot have funded it. It also counts parties who exit and later
+  re-enter the same amount, which is real behavior, so it overstates chance.
 - **Shifted amount:** the exit amount moved by 0.05–0.5 ZEC in steps of 0.01 ZEC. Its decimal
   precision, its remainder modulo 5,000 and its timing are unchanged, but any true match is gone.
-  Round amounts move into sparser territory, which makes this baseline high for them.
+
+Scoring an exit needs 21 days of data on each side (7-day window plus 14-day background), so from 90
+days of data the meter scores exits between July 22 and September 7, 2026.
 
 ## 7. Validation of the matcher
 
-`turnstile validate` runs both checks below. Everything is seeded and reproducible.
+`turnstile validate` runs both checks; everything is seeded and reproducible.
 
-**Planted trips.** 200 synthetic round trips per scenario, placed at random times into the real
-mainnet background, with amounts drawn from real user shields and two 15,000 zat fees:
+### 7.1 Calibrating the chance gate
 
-| Scenario | Linked | Precise amounts (6–8 decimals) | 3–5 decimals | Round |
+The gate allows a number of chance parties in the background. With a 14-day background it moves in
+steps of one party, and three settings were compared:
+
+| Allowed chance parties | Wrong links on exits with no true funder (planted split legs) | Precision on natural labels | Identifiable planted trips linked |
+|---|---|---|---|
+| **none (chosen)** | **3.95%** | **89.7%** | **100%** |
+| one | 6.20% | 87.6% | — |
+| any (no gate) | 10.10% | 78.0% | — |
+
+Only the strictest setting keeps linkable verdicts right about 90% of the time, the same standard as
+the 90% weight share in the verdict. Without the gate, one exit in ten that has no true funder would be
+pinned on an unrelated party.
+
+### 7.2 Planted trips
+
+1,000 synthetic round trips per scenario, placed at random times into the real mainnet background, with
+amounts drawn from ordinary users' shields (not services) and two 15,000 zat fees. A trip is
+**identifiable** when nobody else shielded its amount (plus fees) in the three weeks before the exit, so
+amount and timing can single out the entry; otherwise it is **crowded**.
+
+| Scenario | Linked to the right entry | Linked to a **wrong** one | Identifiable: linked | Crowded: hidden |
 |---|---|---|---|---|
-| (a) exact amount out after 1 hour | 89.5% | 100% (155/155) | 53.3% (24/45) | — |
-| (b) exact amount out after 24 hours | 81.0% | 91.8% (146/159) | 39.0% (16/41) | — |
-| (c) round amount out after 3 hours | 4.0% | — | — | 4.0% (8/200) |
-| (d) split into two legs | 0.0% | 0% (0/137) | 0% (0/63) | 0% (0/200) |
+| (a) exact amount out after 1 hour | 70.7% | 0 | **100%** (641 of 641) | 81.6% (of 359) |
+| (b) exact amount out after 24 hours | 62.8% | 0 | **100%** (628 of 628) | 100% (of 372) |
+| (c) round amount out after 3 hours | 0% | 0 | none identifiable | 100% (of 1,000) |
+| (d) split into two legs | 0% | 79 (3.95%) | 0% (no leg matches) | 89.3% (of 737) |
 
-Exact trips with 3–5 decimal amounts are often not linked because another entity shielded the same
-amount in the same week (services repeat amounts), so the true entry isn't unique. That is the crowd
-working as intended, not a miss.
+Every trip that amount and timing can single out is found. None of the 3,000 trips in (a)–(c) is ever
+blamed on the wrong entry. In (d) the true depositor never matches either leg, so any link is a false
+one: 3.95% of legs happen to match someone else uniquely. That is the irreducible error of
+amount-and-timing analysis, and it cuts both ways: an observer relying on it would wrongly blame an
+innocent party about as often.
 
-**Natural labels.** 8,203 exits went to an address that shielded in the preceding 7 days; 2,326 of
-them are exact round trips. The matcher never sees addresses; the label only says which entry was the
-real funder.
+### 7.3 Natural labels
 
-| | Recall on exact trips | Precision of linkable verdicts |
-|---|---|---|
-| All labels | 68.3% (1,588 of 2,326); precise amounts 93.0% | 78.2% (1,588 of 2,030) |
-| Excluding 6 busy addresses | 41.2% (261 of 634); precise amounts 68.5% | 53.4% (261 of 489) |
+Exits paid to an address that shielded in the preceding 7 days. The matcher never sees addresses; the
+label only says which entry was the funder. It assumes the most recent same-address shield was the
+funder, which isn't always true, so precision here is a floor.
 
-Labels assume the most recent same-address shield was the funder, which isn't always true, so
-precision here is a floor.
+| | Labelled exits | Exact round trips | Recall on exact trips | Precision of linkable verdicts |
+|---|---|---|---|---|
+| All | 7,098 | 1,981 | 61.7%; precise amounts 88.2% | **89.7%** (1,222 of 1,362) |
+| Funder is a person | 5,357 | 541 | 31.2%; precise amounts 58.5% | 55.2% (169 of 306) |
+
+Person-funded labels are the weak spot: only about half of the matcher's verdicts on them name the
+labelled funder. Some "misses" may be the same person shielding from a second address the heuristic
+doesn't connect, but the result is reported as it stands.
 
 ## 8. Leak Meter result
 
-66,131 exits with a full 7-day window on both sides (July 8 – September 21, 2026):
+36,129 exits scored (July 22 – September 7, 2026):
 
-| | Linkable |
-|---|---|
-| Exits linkable to their entry | **15.98%** (10,567) |
-| Coincidence, reversed time | 10.71% |
-| Coincidence, shifted amount | 10.43% |
-| **Beyond coincidence** | **at least 5.27 percentage points** |
-
-By amount precision:
-
-| Exit amount | Observed | Reversed | Shifted | Exits |
+| Exits traced to | Linked | Chance (reversed) | Chance (shifted) | Beyond chance |
 |---|---|---|---|---|
-| Precise (6–8 decimals) | **20.98%** | 7.75% | 0.14% | 22,232 |
-| 3–5 decimals | 14.72% | 12.78% | 17.12% | 23,460 |
-| Round (0–2 decimals) | 11.98% | 11.54% | 13.94% | 20,439 |
+| **Services** | 6.53% | 0.45% | 0.54% | **+5.99 points** |
+| Services, precise amounts (6–8 decimals) | **15.99%** | 0.73% | 0.04% | **+15.26 points** |
+| **People** | 4.38% | 3.72% | 4.78% | none measurable |
+| Everyone | 10.91% | 4.16% | 5.32% | +5.59 points |
 
-**About one in five exits with a precise amount can be traced to its entry**, against 0.14% by chance
-(shifted amount), and 7.75% even when services' re-entries are counted as chance. Round amounts and
-amounts with a few decimals show no measurable leak beyond coincidence: they blend in. That is the
-basis for the Exit Planner's advice.
+What this means:
+
+1. **Services leak.** Of all exits with a precise amount, 16% can be traced back to a deposit made by a
+   service (an exchange, bridge or payment processor), against under 1% by chance. Their users' funds
+   pass through those flows.
+2. **For people, amount-and-timing analysis finds nothing beyond chance at population scale.** Most
+   people don't withdraw exactly what they deposited, and the ones who do are outnumbered by
+   coincidences. That is good news for Zcash users as a whole.
+3. **But an individual who does withdraw their exact deposit is found every time** when the amount is
+   one nobody else used recently (section 7.2: 100% of identifiable trips, after 1 hour or a day). The risk
+   is behavioral and specific to the person, which is exactly what a pre-flight check can see and a
+   population average can't.
+
+An earlier version of this analysis did not separate people from services and did not have the chance
+gate. It reported that one in five precise-amount exits by people could be traced. That was wrong: most
+of those links pointed at services, and many of the rest were coincidences.
 
 ## 9. Limitations
 
@@ -239,6 +292,9 @@ basis for the Exit Planner's advice.
   the same day, so this doesn't split transactions.
 - Validation is a random sample of 20. It confirms the rules on every pool, but it isn't exhaustive.
 - Common-input clustering can merge unrelated parties that co-spend (for example through a service),
-  which shrinks the crowd and can overstate linkability for their exits.
+  and can fail to join one person's separate addresses. The first shrinks the crowd; the second makes
+  some correct links look wrong on natural labels.
+- The service threshold (more than 100 shields in 90 days) is a judgment call; the entity-size table in
+  section 6.1 shows there is a wide empty gap around it.
 - The matcher tests one entry against one exit. Someone who splits an exit, or combines several
   entries, is invisible to it, so the Leak Meter undercounts those patterns.

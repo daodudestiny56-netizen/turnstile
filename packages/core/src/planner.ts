@@ -155,19 +155,35 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
     opts.own,
   );
 
+  const remainder = opts.total - withdrawn;
   const advice = [
     "Send each leg to a different, fresh address that has never deposited into the shielded pool.",
     "If the legs end up at the same address on another chain, they are linked again there.",
-    `Keep the remainder of ${formatZat(opts.total - withdrawn)} ZEC shielded; it's too small to leave without standing out.`,
   ];
+  if (remainder > 0 && eligible.some((d) => d.amount <= remainder)) {
+    // More legs would fit; the leg limit stopped them.
+    const largest = Math.max(...eligible.map((d) => d.amount));
+    advice.push(
+      `${formatZat(remainder)} ZEC stays shielded because the plan is limited to ${opts.maxLegs} legs. ` +
+        `The largest amount that blends in right now is ${formatZat(largest)} ZEC, so taking everything ` +
+        `out would need about ${Math.ceil(opts.total / largest)} withdrawals: plan another round later, ` +
+        `or allow more legs.`,
+    );
+  } else if (remainder > 0 && amounts.length > 0) {
+    advice.push(
+      `Keep the remaining ${formatZat(remainder)} ZEC shielded: it's smaller than any amount that blends in.`,
+    );
+  }
   if (!targetMet) {
     advice.unshift(
       `No amount you can afford is used by ${opts.crowdTarget} or more other parties right now; the plan uses the best available.`,
     );
   }
   if (amounts.length === 0) {
+    const blending = denominations.filter((d) => d.crowd >= opts.crowdTarget);
+    const floor = blending.length ? Math.min(...blending.map((d) => d.amount)) : smallest;
     advice.unshift(
-      `The total is below the smallest amount that blends in (${formatZat(smallest)} ZEC). Consider keeping it shielded.`,
+      `${formatZat(opts.total)} ZEC is below the smallest amount that blends in (${formatZat(floor)} ZEC). Consider keeping it shielded.`,
     );
   }
 
@@ -176,7 +192,7 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
     options: { ...rest, ...(own ? { own } : {}) },
     legs,
     withdrawn,
-    remainder: opts.total - withdrawn,
+    remainder,
     singleExit,
     weakestLegCrowd: legs.length ? Math.min(...legs.map((l) => l.crowd)) : 0,
     targetMet,

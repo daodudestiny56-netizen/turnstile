@@ -216,6 +216,33 @@ describe("planExit", () => {
     expect(plan.advice.join(" ")).toMatch(/keeping it shielded/);
   });
 
+  it("explains a large remainder left by the leg limit, with the withdrawals it would take", async () => {
+    const plan = await planExit(await context(), {
+      total: 5_000_000_000, // 50 ZEC; only 1 ZEC blends in
+      start,
+      horizonHours: 36,
+      maxLegs: 2,
+      seed: 1,
+    });
+    expect(plan.withdrawn).toBe(200_000_000);
+    const advice = plan.advice.join(" ");
+    expect(advice).toMatch(/48 ZEC stays shielded because the plan is limited to 2 legs/);
+    expect(advice).toMatch(/about 50 withdrawals/);
+    expect(advice).not.toMatch(/smaller than any amount/);
+  });
+
+  it("calls a small remainder too small to blend in", async () => {
+    const plan = await planExit(await context(), {
+      total: 317_420_000,
+      start,
+      horizonHours: 36,
+      seed: 1,
+    });
+    expect(plan.advice.join(" ")).toMatch(
+      /remaining 0.1742 ZEC shielded: it's smaller than any amount/,
+    );
+  });
+
   it("exports calendar reminders", async () => {
     // A 36-hour horizon keeps every leg within two days of the data, so none is flagged stale.
     const plan = await planExit(await context(), {

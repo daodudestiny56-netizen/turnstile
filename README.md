@@ -170,7 +170,9 @@ node scripts/verify-events.mjs      # checks 20 random events against a public Z
 node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-28   # writes data/snapshot/
 node scripts/verify-snapshot.mjs    # verifies it in Node and headless Chromium
 
+# any amount works; 3.1742 is only an example
 node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-09-29T14:00Z
+node apps/cli/dist/bin.js check 0.5
 node apps/cli/dist/bin.js plan 3.1742 --hours 48 --ics plan.ics
 node scripts/verify-preflight.mjs   # acceptance checks on real deposits
 ```

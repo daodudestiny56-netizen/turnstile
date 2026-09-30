@@ -170,6 +170,7 @@ using anything.
 - FR2.1 Inputs: amount (ZEC), planned time (default now), optional destination t-address, optional own entry (amount + date).
 - FR2.2 Output: verdict (red / amber / green), `n`, `k_eff`, list of reasons (exact round-trip, rare amount precision, address reuse, weak crowd), and "what would make it green".
 - FR2.3 Runs in a Web Worker against the loaded snapshot; p95 < 500 ms.
+- FR2.4 Shows the data's date range; warns (amber) when the withdrawal is more than 2 days after the data ends.
 
 ### F3 Exit Planner
 - FR3.1 Inputs: total, horizon (hours), target `k_min`, max legs.
@@ -299,12 +300,13 @@ Labels are computed on the fly and reported as aggregates only (P7).
 - [x] Tampered file is rejected by the loader (one flipped byte in any file; altered content with a forged file hash; wrong counts)
 
 ### S5 — Pre-flight, reuse detector, planner (core + CLI)
-**Build:** `scoreExit`, address-reuse check, `planExit` (seeded), `.ics` export; CLI `turnstile check 3.1742 --at ... --to t1...`, `turnstile plan 3.1742 --hours 72 --k 50`.
+**Build:** `preflight` (verdict, reasons, crowd, matched deposit, suggested common amount, data freshness), address-reuse check on locally hashed addresses, `planExit` (seeded; random seed by default so users' schedules don't align), `.ics` export (RFC 5545, folded lines); CLI `turnstile check 3.1742 --at ... --to t1... --deposit ... --deposit-at ...` and `turnstile plan 3.1742 --hours 72`. Both read the verified snapshot bundle, exactly as a browser would. Independent check: `scripts/verify-preflight.mjs`.
 **Acceptance:**
-- [ ] Hypothetical exit that exactly matches a recent real shield amount → red, with reason "exact round-trip"
-- [ ] Destination = a known shielding address → red, "address reuse"
-- [ ] Planner: every leg ≥ `k_min` (or reports best achievable), legs sum ≤ total, remainder reported, same seed → same plan
-- [ ] p95 `scoreExit` < 500 ms on full snapshot
+- [x] Hypothetical exit that exactly matches a recent real shield amount → red, with reason "exact round-trip" (25 of 25 real identifiable deposits; without the deposit entered, 25 of 25 red "unique-match" naming that exact deposit)
+- [x] Destination = a known shielding address → red, "address reuse" (50 of 50; 0 of 50 non-depositing addresses flagged)
+- [x] Planner: every leg meets the crowd target (or reports best achievable), legs sum ≤ total, remainder reported, same seed → same plan (12 plans across 4 totals and 3 seeds)
+- [x] p95 check time < 500 ms on the full snapshot (0.08 ms)
+- [x] Freshness: the data's date range is always shown; a withdrawal more than 2 days after the data ends gets an amber "stale-data" warning, and the crowd is measured over the last full week of data
 
 ### S6 — Web app
 **Build:** Vite + React SPA; pages: Leak Meter dashboard, Pre-flight, Planner, (Execute placeholder); core runs in a Web Worker; strict CSP; no third-party assets.
@@ -327,10 +329,11 @@ Labels are computed on the fly and reported as aggregates only (P7).
 Only if S0–S7 are done by Oct 24. F5 Entry Planner and/or F8 Personal Audit, each with its own tests.
 
 ### S9 — Docs, deploy, demo
-**Build:** README (what/why/how-to-run in 3 commands), `docs/methodology.md` (derivation, matcher, null model, limitations, Blockchair finding), `docs/threat-model.md`, `@turnstile/core` README with integration example; production deploy (GitHub Pages or Cloudflare Pages, no analytics); 3-minute demo video following §3's demo moment.
+**Build:** README (what/why/how-to-run in 3 commands), `docs/methodology.md` (derivation, matcher, null model, limitations, Blockchair finding), `docs/threat-model.md`, `@turnstile/core` README with integration example; production deploy (GitHub Pages or Cloudflare Pages, no analytics); **daily data update**: a scheduled GitHub Actions job that ingests the newest Blockchair day (cached between runs), rebuilds the rolling 90-day snapshot and republishes it; 3-minute demo video following §3's demo moment.
 **Acceptance:**
 - [ ] Fresh clone on a clean machine → README steps work end to end
 - [ ] Live URL passes the S6 Playwright suite
+- [ ] Daily update job runs on schedule and the live snapshot is never more than 1 day behind Blockchair
 - [ ] Video ≤ 3 min, uploaded, linked in README
 
 ### S10 — Submit

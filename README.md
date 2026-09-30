@@ -122,8 +122,8 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S2 | Boundary-event derivation: every shield and deshield, verified against a node | Done |
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
-| S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Next |
-| S6 | Web app | Planned |
+| S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
+| S6 | Web app | Next |
 | S7 | NEAR Intents execution | Planned |
 | S9 | Docs, deployment, demo | Planned |
 
@@ -169,6 +169,10 @@ node scripts/verify-events.mjs      # checks 20 random events against a public Z
 
 node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-28   # writes data/snapshot/
 node scripts/verify-snapshot.mjs    # verifies it in Node and headless Chromium
+
+node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-09-29T14:00Z
+node apps/cli/dist/bin.js plan 3.1742 --hours 48 --ics plan.ics
+node scripts/verify-preflight.mjs   # acceptance checks on real deposits
 ```
 
 Downloads are cached in `data/`, so each file is fetched once. Blockchair limits free downloads to about

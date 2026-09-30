@@ -48,3 +48,33 @@ export {
   sha256Hex,
 } from "./integrity.js";
 export type { Manifest, ManifestFile, VerifiedSnapshot } from "./integrity.js";
+export { listCandidates } from "./matcher.js";
+export type { Candidate } from "./matcher.js";
+export { seededRandom } from "./random.js";
+export {
+  CROWD_TARGET,
+  PreflightRangeError,
+  STALE_AFTER_SEC,
+  createPreflightContext,
+  preflight,
+  roundDownAmount,
+} from "./preflight.js";
+export type {
+  OwnDeposit,
+  PlannedExit,
+  PreflightContext,
+  PreflightResult,
+  Reason,
+  ReasonCode,
+  Verdict,
+} from "./preflight.js";
+export {
+  hourlyActivity,
+  measureDenominations,
+  planExit,
+  planToIcs,
+  planVerdict,
+} from "./planner.js";
+export type { ExitPlan, PlanOptions, PlannedLeg } from "./planner.js";
+export { STANDARD_DENOMINATIONS, bestCommonAmount } from "./denominations.js";
+export type { Denomination } from "./denominations.js";

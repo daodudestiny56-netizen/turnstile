@@ -4,6 +4,9 @@ import { deriveCommand, eventsCommand } from "./events.js";
 import { countsCommand, ingestCommand } from "./ingest.js";
 import { meterCommand, validateCommand } from "./meter.js";
 import { snapshotCommand } from "./snapshot.js";
+import { checkCommand, planCommand } from "./preflight.js";
+
+const DEFAULT_SNAPSHOT = "data/snapshot";
 
 const DEFAULT_DB = "data/turnstile.sqlite";
 const DEFAULT_CACHE = "data/cache/blockchair";
@@ -87,6 +90,32 @@ export function buildProgram(): Command {
     .description("Build the public snapshot bundle (snapshot, address hashes, stats, manifest).")
     .option("--out-dir <dir>", "output directory", "data/snapshot")
     .action(snapshotCommand);
+
+  program
+    .command("check")
+    .description("Pre-flight Check: would this withdrawal from the shielded pool give you away?")
+    .argument("<zec>", "amount to withdraw, e.g. 3.1742")
+    .option("--at <time>", "when you plan to withdraw: now, or ISO e.g. 2026-09-30T14:00Z", "now")
+    .option("--to <address>", "destination transparent address (hashed locally, never sent)")
+    .option("--deposit <zec>", "your deposit into the pool, to check against")
+    .option("--deposit-at <time>", "when you made that deposit (ISO)")
+    .option("--snapshot <dir>", "verified snapshot bundle", DEFAULT_SNAPSHOT)
+    .action(checkCommand);
+
+  program
+    .command("plan")
+    .description("Exit Planner: split a withdrawal into legs that each blend into a crowd.")
+    .argument("<zec>", "total amount to take out")
+    .option("--start <time>", "earliest start: now, or ISO", "now")
+    .option("--hours <n>", "spread legs over this many hours", "72")
+    .option("--legs <n>", "maximum number of legs", "4")
+    .option("--crowd <n>", "other parties each leg should hide among", "10")
+    .option("--seed <n>", "fix the random seed (default: a fresh random one)")
+    .option("--deposit <zec>", "your deposit into the pool")
+    .option("--deposit-at <time>", "when you made that deposit (ISO)")
+    .option("--ics <file>", "write calendar reminders for the legs")
+    .option("--snapshot <dir>", "verified snapshot bundle", DEFAULT_SNAPSHOT)
+    .action(planCommand);
 
   return program;
 }

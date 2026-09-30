@@ -49,17 +49,19 @@ check(
   `round trip: decode then encode reproduces all ${raw.length} bytes of the real snapshot`,
 );
 
-// 3. Address membership against the database
+// 3. Address membership against the database, over the snapshot's own days
 const db = new DatabaseSync(dbPath, { readOnly: true });
 const shieldAddrs = new Set(
   db
-    .prepare("SELECT addresses FROM events WHERE kind = 'SHIELD'")
-    .all()
+    .prepare("SELECT addresses FROM events WHERE kind = 'SHIELD' AND day BETWEEN ? AND ?")
+    .all(manifest.fromDay, manifest.toDay)
     .flatMap((r) => JSON.parse(r.addresses)),
 );
 const exitOnly = db
-  .prepare("SELECT addresses FROM events WHERE kind = 'DESHIELD' LIMIT 5000")
-  .all()
+  .prepare(
+    "SELECT addresses FROM events WHERE kind = 'DESHIELD' AND day BETWEEN ? AND ? LIMIT 5000",
+  )
+  .all(manifest.fromDay, manifest.toDay)
   .flatMap((r) => JSON.parse(r.addresses))
   .filter((a) => !shieldAddrs.has(a))
   .slice(0, 200);

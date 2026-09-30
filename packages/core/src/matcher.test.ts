@@ -1,6 +1,60 @@
 import { describe, expect, it } from "vitest";
-import { clusterEntities } from "./entities.js";
-import { DEFAULT_MATCH_PARAMS, ShieldIndex, scoreExit, type ShieldPoint } from "./matcher.js";
+import { clusterEntities, serviceEntities } from "./entities.js";
+import {
+  DEFAULT_MATCH_PARAMS,
+  ShieldIndex,
+  expectedChanceMatches,
+  feeShapedEntities,
+  historyNeededSec,
+  scoreExit,
+  type ShieldPoint,
+} from "./matcher.js";
+
+describe("chance gate", () => {
+  const DAY_ = 86_400;
+  const exit = { time: 1_780_000_000 + 30 * DAY_, amount: 100_000_000 };
+  const funder = { time: exit.time - 3_600, amount: 100_030_000, entity: 1 };
+
+  it("links a unique match on an amount nobody used in the background", () => {
+    const s = scoreExit(new ShieldIndex([funder]), exit);
+    expect(s).toMatchObject({ expectedChance: 0, linkable: true, topEntity: 1 });
+  });
+
+  it("refuses a unique match when others used the amount in the two weeks before the window", () => {
+    // Two other parties shielded 1 ZEC + fee 10 and 15 days before the exit: outside the 7-day
+    // search window, inside the 14-day background.
+    const background = [
+      { time: exit.time - 10 * DAY_, amount: 100_030_000, entity: 2 },
+      { time: exit.time - 15 * DAY_, amount: 100_015_000, entity: 3 },
+    ];
+    const idx = new ShieldIndex([funder, ...background]);
+    expect(expectedChanceMatches(idx, exit)).toBeCloseTo(1); // 2 parties x 7/14
+    const s = scoreExit(idx, exit);
+    expect(s.entities).toBe(1); // background parties are not candidates
+    expect(s.linkable).toBe(false);
+  });
+
+  it("ignores background shields that aren't fee-shaped or are outside the background", () => {
+    const idx = new ShieldIndex([
+      funder,
+      { time: exit.time - 10 * DAY_, amount: 100_031_234, entity: 2 }, // off-unit
+      { time: exit.time - 22 * DAY_, amount: 100_030_000, entity: 3 }, // before the background
+    ]);
+    expect(expectedChanceMatches(idx, exit)).toBe(0);
+    expect(scoreExit(idx, exit).linkable).toBe(true);
+  });
+
+  it("uses the period after the window for the reverse direction", () => {
+    const later = { time: exit.time + 10 * DAY_, amount: 100_030_000, entity: 4 };
+    const idx = new ShieldIndex([later]);
+    expect(expectedChanceMatches(idx, exit, undefined, "reverse")).toBeCloseTo(0.5);
+    expect(expectedChanceMatches(idx, exit, undefined, "forward")).toBe(0);
+  });
+
+  it("needs window plus background of data on each side", () => {
+    expect(historyNeededSec()).toBe(21 * DAY_);
+  });
+});
 import { crowdBucket, meterStats, precisionBand, shiftedExit, zecDecimals } from "./meter.js";
 
 const H = 3_600;
@@ -36,6 +90,12 @@ describe("clusterEntities", () => {
     expect(new Set(ids).size).toBe(5); // {a,c,d}, {b}, {}, {e}, {}
     expect(ids[4]).not.toBe(ids[6]); // address-less shields stay separate
   });
+
+  it("flags entities with more than minShields shields as services", () => {
+    const entities = [...Array<number>(101).fill(3), ...Array<number>(100).fill(4), 5];
+    expect([...serviceEntities(entities)]).toEqual([3]);
+    expect([...serviceEntities(entities, 99)].sort()).toEqual([3, 4]);
+  });
 });
 
 describe("scoreExit", () => {
@@ -63,6 +123,30 @@ describe("scoreExit", () => {
     expect(
       scoreExit(index, { time: T0 + H, amount: 317_420_000 }, undefined, "reverse").candidates,
     ).toBe(0);
+  });
+
+  it("ignores a shield in the same block as the exit, in both directions", () => {
+    const index = new ShieldIndex([shield]);
+    const sameBlock = { time: T0, amount: 317_420_000 };
+    expect(scoreExit(index, sameBlock).candidates).toBe(0);
+    expect(scoreExit(index, sameBlock, undefined, "reverse").candidates).toBe(0);
+  });
+
+  it("lists the entities an observer can't tell apart from the funder", () => {
+    const index = new ShieldIndex([
+      shield,
+      { time: T0 + 60, amount: 317_445_000, entity: 8 }, // fee-shaped difference
+      { time: T0 + 120, amount: 317_441_234, entity: 9 }, // off-unit difference
+    ]);
+    const exit = { time: T0 + H, amount: 317_420_000 };
+    expect([...feeShapedEntities(index, exit)].sort()).toEqual([7, 8]);
+    expect(
+      [
+        ...feeShapedEntities(index, exit, undefined, "forward", [
+          { time: T0, amount: 317_430_000, entity: 1 },
+        ]),
+      ].sort(),
+    ).toEqual([1, 7, 8]);
   });
 
   it("counts a busy entity once: many shields from one service are one member of the crowd", () => {
@@ -111,12 +195,13 @@ describe("scoreExit", () => {
 });
 
 describe("synthetic chain", () => {
-  const days = 30;
-  const noise = background(20_000, days, 1);
+  // 60 days: the meter needs 21 days of data on each side of an exit (window + background).
+  const days = 60;
+  const noise = background(40_000, days, 1);
   const r = rng(99);
   const planted: { shield: ShieldPoint; exitTime: number; exitAmount: number }[] = [];
   for (let i = 0; i < 200; i++) {
-    const time = T0 + 8 * DAY + Math.floor(r() * 14 * DAY);
+    const time = T0 + 22 * DAY + Math.floor(r() * 14 * DAY);
     const amount = 5_000_000 + Math.floor(r() * 1_000_000_000);
     planted.push({
       shield: { time, amount, entity: 1_000_000 + i },
@@ -145,7 +230,8 @@ describe("synthetic chain", () => {
     const from = T0;
     const to = T0 + days * DAY;
     const noTrips = meterStats(new ShieldIndex(noise), exits, from, to);
-    expect(Math.abs(noTrips.excess)).toBeLessThan(0.01);
+    expect(Math.abs(noTrips.all.observed.rate - noTrips.all.reversed.rate)).toBeLessThan(0.01);
+    expect(Math.abs(noTrips.all.observed.rate - noTrips.all.shifted.rate)).toBeLessThan(0.01);
 
     const withTrips = meterStats(
       index,
@@ -153,8 +239,28 @@ describe("synthetic chain", () => {
       from,
       to,
     );
-    expect(withTrips.observed.linkable - withTrips.baseline.linkable).toBeGreaterThanOrEqual(190);
-    expect(withTrips.excess).toBeGreaterThan(0.05);
+    expect(
+      withTrips.all.observed.linkable - withTrips.all.reversed.linkable,
+    ).toBeGreaterThanOrEqual(190);
+    expect(withTrips.all.excess).toBeGreaterThan(0.05);
+    expect(withTrips.people).toEqual(withTrips.all); // no services declared
+    expect(withTrips.services.observed.linkable).toBe(0);
+  });
+
+  it("meter: splits verdicts that point at a service from those that point at a person", () => {
+    const service = { time: T0 + 25 * DAY, amount: 500_030_000, entity: 777 };
+    const person = { time: T0 + 26 * DAY, amount: 600_030_000, entity: 888 };
+    const idx = new ShieldIndex([service, person]);
+    const exits = [
+      { time: service.time + H, amount: 500_000_000 },
+      { time: person.time + H, amount: 600_000_000 },
+    ];
+    const stats = meterStats(idx, exits, T0, T0 + days * DAY, undefined, new Set([777]));
+    expect(stats.serviceEntities).toBe(1);
+    expect(stats.all.observed.linkable).toBe(2);
+    expect(stats.people.observed.linkable).toBe(1);
+    expect(stats.services.observed.linkable).toBe(1);
+    expect(stats.people.byPrecision["round (0-2 decimals)"]?.observed.linkable).toBe(1);
   });
 });
 

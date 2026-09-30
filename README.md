@@ -83,21 +83,31 @@ before any matching was written; the details are in [docs/methodology.md](docs/m
    are blank exactly when a transaction has no transparent inputs or outputs, and never otherwise. Turnstile
    treats those blanks as zero and rejects any other blank as an error.
 
-## The Leak Meter's first result
+## What the Leak Meter found
 
-Across 66,131 exits from the shielded pool between July 8 and September 21, 2026:
+Across 36,129 exits from the shielded pool between July 22 and September 7, 2026, each checked against
+two independent measures of coincidence:
 
-| Exit amount | Linkable to its entry | By chance |
-|---|---|---|
-| Precise, like 3.17420381 ZEC | **21.0%** | 0.14% to 7.75% |
-| Round, like 2.5 ZEC | 12.0% | 11.5% to 13.9% |
-| All exits | 16.0% | 10.4% to 10.7% |
+| Exits traced to | Linked to their entry | By chance | Beyond chance |
+|---|---|---|---|
+| Services, precise amounts | **16.0%** | 0.04% to 0.73% | **+15.3 points** |
+| Services, all amounts | 6.5% | 0.45% to 0.54% | +6.0 points |
+| People | 4.4% | 3.7% to 4.8% | none measurable |
 
-**About one in five exits with a precise amount can be traced back to its entry.** Round amounts show no
-measurable leak beyond coincidence. Every figure is a lower bound: the matcher only claims a link when
-the difference between entry and exit is an exact multiple of the 5,000-zat fee unit. On real round trips
-where the answer is known, it identifies the right funder 93% of the time for precise amounts. The method,
-both coincidence baselines and the validation are in [docs/methodology.md](docs/methodology.md).
+**Services leak.** Of all exits with a precise amount, one in six can be traced back to a deposit made by
+a service (an exchange, bridge or payment processor), against well under 1% by chance. Everyone whose
+funds pass through those services inherits that.
+
+**People, as a whole, don't: but an individual can.** Across the population, exits traced to people are
+no more common than coincidence. Yet in controlled tests, a person who withdraws exactly what they
+deposited, on an amount nobody else used recently, is found **every time**: 1,269 of 1,269 trips, whether
+they waited an hour or a day. The risk is behavioral and specific to the person, so it can't be read off a
+population average. It has to be checked before each withdrawal, which is what the Pre-flight Check does.
+
+The matcher is built to under-claim. It only links an exit when the gap to the entry is an exact multiple
+of the 5,000-zat fee unit, it counts a service's thousands of deposits as one party, and it refuses to link
+an amount that anyone else used in the previous two weeks. In 3,000 planted round trips it never blamed
+the wrong deposit. The method, calibration and every figure are in [docs/methodology.md](docs/methodology.md).
 
 ## Status
 
@@ -109,7 +119,7 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S0 | Foundation: monorepo, strict TypeScript, tests, CI | Done |
 | S1 | Data ingestion: 90 days of mainnet data, verified against source files | Done |
 | S2 | Boundary-event derivation: every shield and deshield, verified against a node | Done |
-| S3 | Matcher, scorer, and Leak Meter | Done, pending sign-off |
+| S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done, pending sign-off |
 | S4 | Verifiable snapshot file | Next |
 | S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Planned |
 | S6 | Web app | Planned |
@@ -182,8 +192,9 @@ shielded pool. If more came out than went in, it left.
 **Matching.** For every exit, Turnstile finds the entries that could have funded it: earlier in time, of
 slightly larger value, with the gap consistent with fees. Entries are grouped by who made them, so a busy
 service counts once, not thousands of times. Recent candidates, and gaps that are exact multiples of the
-fee unit, weigh most. The result is an *effective anonymity set*: roughly, how many parties you could
-plausibly be.
+fee unit, weigh most. It then checks how often that exact amount turned up in the two weeks before; a
+single match on a popular amount is treated as the coincidence it probably is. The result is an
+*effective anonymity set*: roughly, how many parties you could plausibly be.
 
 **Checking itself.** Any matcher finds some unique matches by chance, so Turnstile measures chance twice.
 Once by running backwards in time, pairing exits with entries that happened *after* them, which can't be

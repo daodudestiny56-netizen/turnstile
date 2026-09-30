@@ -3,11 +3,16 @@ import {
   DEFAULT_MATCH_PARAMS,
   ShieldIndex,
   clusterEntities,
+  expectedChanceMatches,
+  feeShapedEntities,
+  historyNeededSec,
   meterStats,
   precisionBand,
   scoreExit,
-  type MeterStats,
-  type Rate,
+  serviceEntities,
+  type Breakdown,
+  type Comparison,
+  type MatchParams,
   type ShieldPoint,
 } from "@turnstile/core";
 import {
@@ -25,11 +30,20 @@ export interface MeterOptions {
   days?: string;
   db: string;
   out?: string;
+  /** Override maxExpectedChance, for calibration. */
+  maxChance?: string;
+}
+
+function paramsFrom(opts: MeterOptions): MatchParams {
+  return opts.maxChance === undefined
+    ? DEFAULT_MATCH_PARAMS
+    : { ...DEFAULT_MATCH_PARAMS, maxExpectedChance: Number(opts.maxChance) };
 }
 
 interface MatchData {
   shieldEvents: StoredEvent[];
   shields: ShieldPoint[];
+  services: Set<number>;
   exits: StoredEvent[];
   index: ShieldIndex;
   dataFrom: number;
@@ -58,6 +72,7 @@ function loadMatchData(opts: MeterOptions): MatchData {
   return {
     shieldEvents,
     shields,
+    services: serviceEntities(entities),
     exits,
     index: new ShieldIndex(shields),
     dataFrom: parseDay(from) / 1000,
@@ -66,42 +81,62 @@ function loadMatchData(opts: MeterOptions): MatchData {
 }
 
 const pct = (r: number): string => `${(100 * r).toFixed(2)}%`;
-const rateLine = (r: Rate): string => `${pct(r.rate)}  (${r.linkable} of ${r.total})`;
+
+function row(label: string, c: Comparison): string {
+  return (
+    `    ${label.padEnd(24)}${pct(c.observed.rate).padStart(9)}${pct(c.reversed.rate).padStart(10)}` +
+    `${pct(c.shifted.rate).padStart(10)}${pct(c.excess).padStart(11)}   (${c.observed.total} exits)`
+  );
+}
+
+function printBreakdown(title: string, b: Breakdown): void {
+  console.log(`\n  ${title}`);
+  console.log("                             linked  reversed   shifted  beyond chance");
+  console.log(row("all exits", b));
+  for (const [band, c] of Object.entries(b.byPrecision)) console.log(row(band, c));
+  for (const [month, c] of Object.entries(b.byMonth)) console.log(row(month, c));
+}
 
 export function meterCommand(opts: MeterOptions): void {
   const started = performance.now();
   const data = loadMatchData(opts);
   const entityCount = new Set(data.shields.map((s) => s.entity)).size;
-  const stats: MeterStats = meterStats(data.index, data.exits, data.dataFrom, data.dataTo);
+  const serviceShields = data.shields.filter((s) => data.services.has(s.entity)).length;
+  const stats = meterStats(
+    data.index,
+    data.exits,
+    data.dataFrom,
+    data.dataTo,
+    paramsFrom(opts),
+    data.services,
+  );
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
 
+  const p = stats.people;
   console.log("Turnstile Leak Meter");
   console.log(
-    `  data: ${data.shieldEvents.length} shields from ${entityCount} entities, ${data.exits.length} exits`,
+    `  data: ${data.shieldEvents.length} shields from ${entityCount} entities ` +
+      `(${stats.serviceEntities} services made ${serviceShields} of them), ${data.exits.length} exits`,
   );
   console.log(
-    `  scored: ${stats.evaluated} exits with a full ${stats.params.windowSec / 86_400}-day window on both sides\n`,
+    `  scored: ${stats.evaluated} exits with ${historyNeededSec(stats.params) / 86_400} days of data on both sides ` +
+      `(${stats.params.windowSec / 86_400}-day search window, ${stats.params.backgroundSec / 86_400}-day background)\n`,
   );
-  console.log(`  linkable to their entry        ${rateLine(stats.observed)}`);
-  console.log(`  coincidence, reversed time     ${rateLine(stats.baseline)}`);
-  console.log(`  coincidence, shifted amount    ${rateLine(stats.shiftedBaseline)}`);
+  console.log(`  Exits traced to a person-scale entity`);
   console.log(
-    `  linkable beyond coincidence    at least ${pct(stats.excess)} (observed minus the larger baseline)
-`,
+    `    linked to their entry          ${pct(p.observed.rate)}  (${p.observed.linkable})`,
   );
-  console.log("  by amount precision                observed  reversed   shifted");
-  for (const [band, r] of Object.entries(stats.byPrecision)) {
-    console.log(
-      `    ${band.padEnd(30)}  ${pct(r.observed.rate).padStart(8)}  ${pct(r.baseline.rate).padStart(8)}  ${pct(r.shiftedBaseline.rate).padStart(8)}   (${r.observed.total} exits)`,
-    );
-  }
-  console.log("  by month");
-  for (const [month, r] of Object.entries(stats.byMonth)) {
-    console.log(
-      `    ${month.padEnd(30)}  ${pct(r.observed.rate).padStart(8)}  ${pct(r.baseline.rate).padStart(8)}  ${pct(r.shiftedBaseline.rate).padStart(8)}   (${r.observed.total} exits)`,
-    );
-  }
-  console.log("  entities that could have funded each exit");
+  console.log(
+    `    by chance, reversed time       ${pct(p.reversed.rate)}  (${p.reversed.linkable})`,
+  );
+  console.log(`    by chance, shifted amount      ${pct(p.shifted.rate)}  (${p.shifted.linkable})`);
+  console.log(`    beyond chance                  at least ${pct(p.excess)}`);
+
+  printBreakdown("People (headline)", stats.people);
+  printBreakdown("Services (entities with more than 100 shields)", stats.services);
+  printBreakdown("Everyone", stats.all);
+
+  console.log("\n  entities that could have funded each exit");
   for (const [bucket, n] of Object.entries(stats.crowd)) {
     console.log(`    ${bucket.padEnd(8)} ${String(n).padStart(7)}  ${pct(n / stats.evaluated)}`);
   }
@@ -133,13 +168,37 @@ interface PlantedTrip {
   exits: { time: number; amount: number }[];
 }
 
+/** How the matcher treated one planted exit. */
+type Outcome = "right" | "wrong" | "hidden";
+
+class OutcomeTally {
+  identifiable = { n: 0, right: 0, wrong: 0 };
+  crowded = { n: 0, right: 0, wrong: 0 };
+  add(identifiable: boolean, outcome: Outcome): void {
+    const t = identifiable ? this.identifiable : this.crowded;
+    t.n++;
+    if (outcome === "right") t.right++;
+    if (outcome === "wrong") t.wrong++;
+  }
+  get n(): number {
+    return this.identifiable.n + this.crowded.n;
+  }
+  get right(): number {
+    return this.identifiable.right + this.crowded.right;
+  }
+  get wrong(): number {
+    return this.identifiable.wrong + this.crowded.wrong;
+  }
+}
+
 export function validateCommand(opts: MeterOptions & { trips: string; seed: string }): void {
   const data = loadMatchData(opts);
-  const params = DEFAULT_MATCH_PARAMS;
+  const params = paramsFrom(opts);
   const rand = rng(Number(opts.seed));
   const n = Number(opts.trips);
+  // Planted trips stand for people, so their amounts come from ordinary users' shields.
   const userAmounts = data.shieldEvents
-    .filter((e) => !e.tags.includes("coinbase"))
+    .filter((e, i) => !e.tags.includes("coinbase") && !data.services.has(data.shields[i]!.entity))
     .map((e) => e.amount);
   const pickAmount = (min = 0): number => {
     for (;;) {
@@ -147,79 +206,81 @@ export function validateCommand(opts: MeterOptions & { trips: string; seed: stri
       if (x >= min) return x;
     }
   };
-  const lo = data.dataFrom + params.windowSec;
-  const hi = data.dataTo - params.windowSec - 2 * 86_400;
+  const lo = data.dataFrom + historyNeededSec(params);
+  const hi = data.dataTo - 2 * 86_400;
   const pickTime = (): number => Math.floor(lo + rand() * (hi - lo));
   let nextEntity = Math.max(-1, ...data.shields.map((s) => s.entity)) + 1;
+  const trip = (t: number, amount: number, exits: PlantedTrip["exits"]): PlantedTrip => ({
+    shield: { time: t, amount, entity: nextEntity++ },
+    exits,
+  });
 
   const scenarios: Record<string, () => PlantedTrip> = {
     "(a) exact amount out after 1 hour": () => {
       const t = pickTime();
       const x = pickAmount();
-      return {
-        shield: { time: t, amount: x, entity: nextEntity++ },
-        exits: [{ time: t + HOUR, amount: x - 2 * FEE }],
-      };
+      return trip(t, x, [{ time: t + HOUR, amount: x - 2 * FEE }]);
     },
     "(b) exact amount out after 24 hours": () => {
       const t = pickTime();
       const x = pickAmount();
-      return {
-        shield: { time: t, amount: x, entity: nextEntity++ },
-        exits: [{ time: t + 24 * HOUR, amount: x - 2 * FEE }],
-      };
+      return trip(t, x, [{ time: t + 24 * HOUR, amount: x - 2 * FEE }]);
     },
     "(c) round amount out after 3 hours": () => {
       const t = pickTime();
       const r = ROUND_ZEC[Math.floor(rand() * ROUND_ZEC.length)]!;
-      return {
-        shield: { time: t, amount: r + 2 * FEE, entity: nextEntity++ },
-        exits: [{ time: t + 3 * HOUR, amount: r }],
-      };
+      return trip(t, r + 2 * FEE, [{ time: t + 3 * HOUR, amount: r }]);
     },
     "(d) split into 2 legs": () => {
       const t = pickTime();
       // At least 0.1 ZEC, so both legs are real withdrawals.
       const x = pickAmount(10_000_000);
       const leg1 = Math.floor((x * 0.6) / 1_000_000) * 1_000_000;
-      return {
-        shield: { time: t, amount: x, entity: nextEntity++ },
-        exits: [
-          { time: t + 6 * HOUR, amount: leg1 },
-          { time: t + 30 * HOUR, amount: x - 3 * FEE - leg1 },
-        ],
-      };
+      return trip(t, x, [
+        { time: t + 6 * HOUR, amount: leg1 },
+        { time: t + 30 * HOUR, amount: x - 3 * FEE - leg1 },
+      ]);
     },
   };
 
   console.log(
-    `Planted trips: ${n} per scenario, seed ${opts.seed}, into real mainnet background\n`,
+    `Planted trips: ${n} per scenario, seed ${opts.seed}, amounts from ordinary users' shields,\n` +
+      `placed into the real mainnet background.\n` +
+      `"Identifiable": nobody else shielded this amount (plus fees) in the 3 weeks before the exit,\n` +
+      `so amount and timing single out the entry. "Crowded": someone else did.\n`,
+  );
+  console.log(
+    "                                        exits   linked right   linked WRONG   identifiable -> linked   crowded -> hidden",
   );
   for (const [name, make] of Object.entries(scenarios)) {
-    let legs = 0;
-    let linked = 0;
-    const bands = new Map<string, { legs: number; linked: number }>();
+    const t = new OutcomeTally();
     for (let i = 0; i < n; i++) {
-      const trip = make();
-      for (const exit of trip.exits) {
-        legs++;
-        const s = scoreExit(data.index, exit, params, "forward", [trip.shield]);
-        const hit = s.linkable && s.topEntity === trip.shield.entity;
-        if (hit) linked++;
-        const band = bands.get(precisionBand(exit.amount)) ?? { legs: 0, linked: 0 };
-        band.legs++;
-        if (hit) band.linked++;
-        bands.set(precisionBand(exit.amount), band);
+      const planted = make();
+      for (const exit of planted.exits) {
+        const s = scoreExit(data.index, exit, params, "forward", [planted.shield]);
+        // Identifiable by the matcher's own standard: nobody else used this amount (plus fees) in
+        // the search window or the background before it.
+        const identifiable =
+          feeShapedEntities(data.index, exit, params, "forward").size === 0 &&
+          expectedChanceMatches(data.index, exit, params, "forward") === 0;
+        const outcome: Outcome = !s.linkable
+          ? "hidden"
+          : s.topEntity === planted.shield.entity
+            ? "right"
+            : "wrong";
+        t.add(identifiable, outcome);
       }
     }
+    const idLinked = t.identifiable.n ? t.identifiable.right / t.identifiable.n : NaN;
+    const crowdHidden = t.crowded.n
+      ? (t.crowded.n - t.crowded.right - t.crowded.wrong) / t.crowded.n
+      : NaN;
     console.log(
-      `  ${name.padEnd(38)} linked ${pct(linked / legs).padStart(8)}  (${linked} of ${legs} exits)`,
+      `  ${name.padEnd(38)}${String(t.n).padStart(5)}${pct(t.right / t.n).padStart(15)}` +
+        `${`${t.wrong} (${pct(t.wrong / t.n)})`.padStart(15)}` +
+        `${`${pct(idLinked)} of ${t.identifiable.n}`.padStart(25)}` +
+        `${`${pct(crowdHidden)} of ${t.crowded.n}`.padStart(20)}`,
     );
-    for (const [band, b] of [...bands].sort(([a], [c]) => a.localeCompare(c))) {
-      console.log(
-        `      ${band.padEnd(34)} ${pct(b.linked / b.legs).padStart(8)}  (${b.linked} of ${b.legs})`,
-      );
-    }
   }
 
   // Natural labels: exits paid to an address that shielded within the window. The matcher never
@@ -230,25 +291,22 @@ export function validateCommand(opts: MeterOptions & { trips: string; seed: stri
   for (const s of data.shieldEvents)
     for (const a of s.addresses) (byAddress.get(a) ?? byAddress.set(a, []).get(a)!).push(s);
 
-  const labels: { exit: StoredEvent; shield: StoredEvent; address: string }[] = [];
+  const labels: { exit: StoredEvent; shield: StoredEvent }[] = [];
   for (const exit of data.exits) {
-    if (exit.time - params.windowSec < data.dataFrom) continue;
-    let best: { shield: StoredEvent; address: string } | undefined;
+    if (exit.time - historyNeededSec(params) < data.dataFrom) continue;
+    let best: StoredEvent | undefined;
     for (const a of exit.addresses)
       for (const s of byAddress.get(a) ?? [])
         if (
           s.time < exit.time &&
           exit.time - s.time <= params.windowSec &&
-          (!best || s.time > best.shield.time)
+          (!best || s.time > best.time)
         )
-          best = { shield: s, address: a };
-    if (best) labels.push({ exit, ...best });
+          best = s;
+    if (best) labels.push({ exit, shield: best });
   }
-  const perAddress = new Map<string, number>();
-  for (const l of labels) perAddress.set(l.address, (perAddress.get(l.address) ?? 0) + 1);
-  const busy = new Set([...perAddress].filter(([, c]) => c > 100).map(([a]) => a));
 
-  const evaluate = (set: typeof labels): string => {
+  const evaluate = (set: typeof labels): void => {
     let exact = 0;
     let flagged = 0;
     let correct = 0;
@@ -270,23 +328,26 @@ export function validateCommand(opts: MeterOptions & { trips: string; seed: stri
         bands.set(precisionBand(l.exit.amount), b);
       }
     }
-    const byBand = [...bands]
-      .sort(([a], [c]) => a.localeCompare(c))
-      .map(
-        ([band, b]) => `
-        ${band.padEnd(28)} recall ${pct(b.correct / b.exact).padStart(8)}  (${b.correct} of ${b.exact})`,
-      )
-      .join("");
-    return (
-      `${set.length} labelled exits, ${exact} exact round trips (${pct(exact / set.length)})\n` +
-      `      recall on exact trips  ${pct(correct / Math.max(1, exact))}  (${correct} of ${exact} linked to the right entity)\n` +
-      `      precision              ${pct(correct / Math.max(1, flagged))}  (${correct} of ${flagged} linkable verdicts correct)` +
-      byBand
+    console.log(
+      `    ${set.length} labelled exits, ${exact} exact round trips (${pct(exact / Math.max(1, set.length))})`,
     );
+    console.log(
+      `    recall on exact trips  ${pct(correct / Math.max(1, exact))}  (${correct} of ${exact} linked to the right entity)`,
+    );
+    console.log(
+      `    precision              ${pct(correct / Math.max(1, flagged))}  (${correct} of ${flagged} linkable verdicts correct)`,
+    );
+    for (const [band, b] of [...bands].sort(([a], [c]) => a.localeCompare(c))) {
+      console.log(
+        `      ${band.padEnd(26)} recall ${pct(b.correct / b.exact).padStart(8)}  (${b.correct} of ${b.exact})`,
+      );
+    }
   };
+  const isPersonLabel = (l: (typeof labels)[number]): boolean =>
+    !data.services.has(entityOf.get(l.shield)!);
   console.log(`\nNatural labels (same-address round trips; addresses hidden from the matcher)`);
-  console.log(`  all:                    ${evaluate(labels)}`);
-  console.log(
-    `  excluding ${busy.size} busy addresses (>100 labels each):\n                          ${evaluate(labels.filter((l) => !busy.has(l.address)))}`,
-  );
+  console.log(`  all labels:`);
+  evaluate(labels);
+  console.log(`  labels whose funder is a person-scale entity:`);
+  evaluate(labels.filter(isPersonLabel));
 }

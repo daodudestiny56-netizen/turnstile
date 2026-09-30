@@ -66,7 +66,8 @@ export function buildProgram(): Command {
       .option("--from <day>", "first UTC day, YYYY-MM-DD")
       .option("--to <day>", "last UTC day, YYYY-MM-DD (default: yesterday)", yesterdayUtc())
       .option("--days <n>", "number of days ending at --to (alternative to --from)")
-      .option("--db <path>", "SQLite database path", DEFAULT_DB);
+      .option("--db <path>", "SQLite database path", DEFAULT_DB)
+      .option("--max-chance <n>", "override the chance-match threshold (calibration only)");
 
   withRange(program.command("meter"))
     .description(

@@ -37,4 +37,10 @@ export type {
   TxContext,
 } from "./derive.js";
 export { EventStore } from "./events.js";
-export type { DaySummary, DeriveResult, EventSummary, SourceComparison } from "./events.js";
+export type {
+  DaySummary,
+  DeriveResult,
+  EventSummary,
+  SourceComparison,
+  StoredEvent,
+} from "./events.js";

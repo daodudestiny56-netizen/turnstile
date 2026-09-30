@@ -6,6 +6,7 @@ import {
   toEvent,
   type BoundaryEvent,
   type DeriveConfig,
+  type EventTag,
   type TxContext,
 } from "./derive.js";
 import type { TxRecord } from "./types.js";
@@ -217,6 +218,31 @@ export class EventStore {
     return result;
   }
 
+  /** All derived events on the given days, oldest first, with addresses and tags parsed. */
+  load(days: readonly string[]): StoredEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT txid, time, kind, amount, addresses, tags FROM events
+         WHERE day IN (${days.map(() => "?").join(",")}) ORDER BY time, txid`,
+      )
+      .all(...days) as {
+      txid: string;
+      time: number;
+      kind: "SHIELD" | "DESHIELD";
+      amount: number;
+      addresses: string;
+      tags: string;
+    }[];
+    return rows.map((r) => ({
+      txid: r.txid,
+      time: r.time,
+      kind: r.kind,
+      amount: r.amount,
+      addresses: JSON.parse(r.addresses) as string[],
+      tags: r.tags === "" ? [] : (r.tags.split(",") as EventTag[]),
+    }));
+  }
+
   /** Aggregate report over a set of days (PRD S2 acceptance). */
   summary(days: readonly string[]): EventSummary {
     const inDays = `day IN (${days.map(() => "?").join(",")})`;
@@ -300,4 +326,13 @@ export interface EventSummary {
   perDay: DaySummary[];
   source: SourceComparison;
   nonEvents: { transparent: number; shielded_only: number; coinbase: number; incomplete: number };
+}
+
+export interface StoredEvent {
+  txid: string;
+  time: number;
+  kind: "SHIELD" | "DESHIELD";
+  amount: number;
+  addresses: string[];
+  tags: EventTag[];
 }

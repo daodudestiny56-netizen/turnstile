@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { VERSION, formatZat, zecToZat } from "@turnstile/core";
 import { deriveCommand, eventsCommand } from "./events.js";
 import { countsCommand, ingestCommand } from "./ingest.js";
+import { meterCommand, validateCommand } from "./meter.js";
 
 const DEFAULT_DB = "data/turnstile.sqlite";
 const DEFAULT_CACHE = "data/cache/blockchair";
@@ -59,6 +60,26 @@ export function buildProgram(): Command {
       .option("--db <path>", "SQLite database path", DEFAULT_DB)
       .action(action);
   }
+
+  const withRange = (cmd: Command): Command =>
+    cmd
+      .option("--from <day>", "first UTC day, YYYY-MM-DD")
+      .option("--to <day>", "last UTC day, YYYY-MM-DD (default: yesterday)", yesterdayUtc())
+      .option("--days <n>", "number of days ending at --to (alternative to --from)")
+      .option("--db <path>", "SQLite database path", DEFAULT_DB);
+
+  withRange(program.command("meter"))
+    .description(
+      "Leak Meter: how many exits can be linked to their entry, against a coincidence baseline.",
+    )
+    .option("--out <file>", "also write the statistics as JSON")
+    .action(meterCommand);
+
+  withRange(program.command("validate"))
+    .description("Check the matcher on planted round trips and on natural same-address labels.")
+    .option("--trips <n>", "planted trips per scenario", "200")
+    .option("--seed <n>", "random seed", "2026")
+    .action(validateCommand);
 
   return program;
 }

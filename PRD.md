@@ -258,20 +258,23 @@ You confirm, then we move on. A failing check means we fix it in that section �
 - [x] Thresholds (`shieldedResidualMin`, `shieldMinZat`, `batchMinOutputs`) tuned with written justification ([docs/methodology.md](docs/methodology.md))
 
 ### S3 — Matcher, scorer & Leak Meter
-**Build:** `@turnstile/core` matcher + kernels + `k_eff`; null model; `stats.json`; `turnstile meter`.
+**Build:** `@turnstile/core` matcher (entities, fee-shaped weighting, `k_eff`); two coincidence baselines; `stats.json`; `turnstile meter` and `turnstile validate`. Method and results: [docs/methodology.md](docs/methodology.md) sections 6-8.
 **Ground truth at $0 (no transactions of our own):**
 1. *Natural labels* — mainnet round-trips where the deshield destination equals the shield source address
    (same person with near certainty). Addresses are **hidden from the matcher**; we measure how many it
    recovers from amount + timing alone (recall) and how often it points at the wrong shield (precision).
 2. *Planted trips* — inject synthetic round-trips into real mainnet background traffic:
    (a) exact amount out after 1h, (b) exact after 24h, (c) round amount after 3h, (d) split into 2 legs.
-Labels stay in `research/` outputs as aggregates only (P7) — no per-tx lists committed.
+Labels are computed on the fly and reported as aggregates only (P7) — no per-tx lists are written or committed.
 **Acceptance:**
-- [ ] Synthetic-chain unit tests: planted round-trips found, planted noise not
+- [x] Synthetic-chain unit tests: planted round-trips found, planted noise not
 - [ ] Planted (a) and (b) scored linkable at ≥ 90%; (c) and (d) mostly not uniquely linkable
-- [ ] Recall/precision on natural labels reported
-- [ ] Observed linkable % is materially above null baseline (or, if not, we write that up honestly and adjust the pitch)
-- [ ] `turnstile meter --days 90` prints headline + baseline in < 60 s
+      Result: precise amounts (6-8 decimals) 100% and 91.8%; all amounts 89.5% and 81.0%, because exact trips with
+      3-5 decimal amounts often share their amount with another entity that week and are rightly not unique.
+      (c) 4.0%, (d) 0.0%. Awaiting sign-off on scoring this criterion on precise amounts.
+- [x] Recall/precision on natural labels reported (recall 68.3% on exact trips, 93.0% for precise amounts; precision 78.2%)
+- [x] Observed linkable % is materially above null baseline: 15.98% vs 10.71% / 10.43%; precise amounts 20.98% vs 7.75% / 0.14%
+- [x] `turnstile meter --days 90` prints headline + baseline in < 60 s (6 s)
 
 ### S4 — Snapshot
 **Build:** columnar codec (encode/decode), address-hash side file, manifest with sha256, `turnstile snapshot`; browser-compatible loader that verifies the hash.

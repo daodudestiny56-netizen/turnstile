@@ -83,6 +83,22 @@ before any matching was written; the details are in [docs/methodology.md](docs/m
    are blank exactly when a transaction has no transparent inputs or outputs, and never otherwise. Turnstile
    treats those blanks as zero and rejects any other blank as an error.
 
+## The Leak Meter's first result
+
+Across 66,131 exits from the shielded pool between July 8 and September 21, 2026:
+
+| Exit amount | Linkable to its entry | By chance |
+|---|---|---|
+| Precise, like 3.17420381 ZEC | **21.0%** | 0.14% to 7.75% |
+| Round, like 2.5 ZEC | 12.0% | 11.5% to 13.9% |
+| All exits | 16.0% | 10.4% to 10.7% |
+
+**About one in five exits with a precise amount can be traced back to its entry.** Round amounts show no
+measurable leak beyond coincidence. Every figure is a lower bound: the matcher only claims a link when
+the difference between entry and exit is an exact multiple of the 5,000-zat fee unit. On real round trips
+where the answer is known, it identifies the right funder 93% of the time for precise amounts. The method,
+both coincidence baselines and the validation are in [docs/methodology.md](docs/methodology.md).
+
 ## Status
 
 Turnstile is being built in public sections, and each one must pass its acceptance tests before the next
@@ -93,8 +109,8 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S0 | Foundation: monorepo, strict TypeScript, tests, CI | Done |
 | S1 | Data ingestion: 90 days of mainnet data, verified against source files | Done |
 | S2 | Boundary-event derivation: every shield and deshield, verified against a node | Done |
-| S3 | Matcher, scorer, and Leak Meter | Next |
-| S4 | Verifiable snapshot file | Planned |
+| S3 | Matcher, scorer, and Leak Meter | Done, pending sign-off |
+| S4 | Verifiable snapshot file | Next |
 | S5 | Pre-flight Check, Exit Planner, reuse detector (CLI) | Planned |
 | S6 | Web app | Planned |
 | S7 | NEAR Intents execution | Planned |
@@ -136,6 +152,8 @@ node scripts/verify-ingest.mjs
 
 node apps/cli/dist/bin.js derive --days 7 --to 2026-09-28
 node apps/cli/dist/bin.js events --days 7 --to 2026-09-28
+node apps/cli/dist/bin.js meter --days 90 --to 2026-09-28      # the Leak Meter (needs 90 days ingested)
+node apps/cli/dist/bin.js validate --days 90 --to 2026-09-28   # planted trips and natural labels
 node scripts/verify-events.mjs      # checks 20 random events against a public Zcash node
 ```
 
@@ -162,12 +180,15 @@ transparent value coming out. If more went in than came out (beyond a fee), the 
 shielded pool. If more came out than went in, it left.
 
 **Matching.** For every exit, Turnstile finds the entries that could have funded it: earlier in time, of
-slightly larger value, with the gap consistent with fees. It weighs each candidate by timing and amount, and
-turns the result into an *effective anonymity set*: roughly, how many people you could plausibly be.
+slightly larger value, with the gap consistent with fees. Entries are grouped by who made them, so a busy
+service counts once, not thousands of times. Recent candidates, and gaps that are exact multiples of the
+fee unit, weigh most. The result is an *effective anonymity set*: roughly, how many parties you could
+plausibly be.
 
-**Checking itself.** The same matching runs backwards in time, pairing exits with entries that happened
-*after* them, which can't be real. The linkage rate there is pure coincidence, and the Leak Meter reports
-its result against that baseline.
+**Checking itself.** Any matcher finds some unique matches by chance, so Turnstile measures chance twice.
+Once by running backwards in time, pairing exits with entries that happened *after* them, which can't be
+real. Once by nudging each exit amount by a few hundredths of a ZEC, which keeps its roundness and timing
+but removes the true match. The Leak Meter reports its result against the larger of the two.
 
 ## Repository layout
 

@@ -132,7 +132,105 @@ A service that shields thousands of times inflates the apparent crowd any single
 matcher (PRD section S3) has to account for that rather than count every shield as an independent
 person.
 
-## 6. Limitations
+## 6. Matching exits to entries
+
+For every exit (a deshield that is not a batch payout), Turnstile asks what an observer would: which
+earlier shields could have funded it?
+
+### 6.1 Candidates
+
+A shield is a candidate for an exit if it happened within the 7 days before it and
+`0 ≤ shield amount − exit amount ≤ 200,000` zat, which is the room fees take up. Shields are grouped
+into **entities** with the common-input-ownership heuristic: addresses spent together in one
+transaction belong to one party. The crowd is counted in entities, so a service that shielded 11,721
+times in September is one member of it, not 11,721. The 85,560 shields form 26,476 entities.
+
+### 6.2 Weights
+
+Each candidate gets a weight `amount weight / (1 + Δt / 1 hour)`, summed per entity:
+
+- **Time.** 1 hour is close to the median delay of the natural round trips (1.2 hours, section 7); the
+  p90 is 53 hours, so the weight falls off slowly rather than cutting off.
+- **Amount.** 91.8% of exact natural round trips differ by a multiple of 5,000 zat, the ZIP-317 fee unit
+  (2,298 of 2,503). A chance match is spread evenly over the ~200,000 possible differences. Per
+  candidate, a fee-shaped difference is therefore about 4,500 times likelier to come from the real
+  funder than from chance, and any other difference about 0.08 times. Off-unit candidates get a
+  relative weight of 0.00002. They still count toward the size of the crowd but barely dilute a
+  fee-shaped match.
+
+### 6.3 Verdict
+
+An exit is **linkable** when the top entity has a fee-shaped candidate and either is the only
+candidate entity or holds at least 90% of the weight. Requiring the fee shape gives up the ~8% of true
+round trips whose fees are non-standard, so every figure below is a lower bound.
+
+### 6.4 Two measures of coincidence
+
+A matcher run over any data finds some unique matches by chance. Turnstile measures that rate twice
+and reports its result against the larger of the two:
+
+- **Reversed time:** the same test against shields in the 7 days *after* the exit, which cannot have
+  funded it. This also counts services that exit and later re-enter the same amount, which is real
+  behavior, so it overstates chance.
+- **Shifted amount:** the exit amount moved by 0.05–0.5 ZEC in steps of 0.01 ZEC. Its decimal
+  precision, its remainder modulo 5,000 and its timing are unchanged, but any true match is gone.
+  Round amounts move into sparser territory, which makes this baseline high for them.
+
+## 7. Validation of the matcher
+
+`turnstile validate` runs both checks below. Everything is seeded and reproducible.
+
+**Planted trips.** 200 synthetic round trips per scenario, placed at random times into the real
+mainnet background, with amounts drawn from real user shields and two 15,000 zat fees:
+
+| Scenario | Linked | Precise amounts (6–8 decimals) | 3–5 decimals | Round |
+|---|---|---|---|---|
+| (a) exact amount out after 1 hour | 89.5% | 100% (155/155) | 53.3% (24/45) | — |
+| (b) exact amount out after 24 hours | 81.0% | 91.8% (146/159) | 39.0% (16/41) | — |
+| (c) round amount out after 3 hours | 4.0% | — | — | 4.0% (8/200) |
+| (d) split into two legs | 0.0% | 0% (0/137) | 0% (0/63) | 0% (0/200) |
+
+Exact trips with 3–5 decimal amounts are often not linked because another entity shielded the same
+amount in the same week (services repeat amounts), so the true entry isn't unique. That is the crowd
+working as intended, not a miss.
+
+**Natural labels.** 8,203 exits went to an address that shielded in the preceding 7 days; 2,326 of
+them are exact round trips. The matcher never sees addresses; the label only says which entry was the
+real funder.
+
+| | Recall on exact trips | Precision of linkable verdicts |
+|---|---|---|
+| All labels | 68.3% (1,588 of 2,326); precise amounts 93.0% | 78.2% (1,588 of 2,030) |
+| Excluding 6 busy addresses | 41.2% (261 of 634); precise amounts 68.5% | 53.4% (261 of 489) |
+
+Labels assume the most recent same-address shield was the funder, which isn't always true, so
+precision here is a floor.
+
+## 8. Leak Meter result
+
+66,131 exits with a full 7-day window on both sides (July 8 – September 21, 2026):
+
+| | Linkable |
+|---|---|
+| Exits linkable to their entry | **15.98%** (10,567) |
+| Coincidence, reversed time | 10.71% |
+| Coincidence, shifted amount | 10.43% |
+| **Beyond coincidence** | **at least 5.27 percentage points** |
+
+By amount precision:
+
+| Exit amount | Observed | Reversed | Shifted | Exits |
+|---|---|---|---|---|
+| Precise (6–8 decimals) | **20.98%** | 7.75% | 0.14% | 22,232 |
+| 3–5 decimals | 14.72% | 12.78% | 17.12% | 23,460 |
+| Round (0–2 decimals) | 11.98% | 11.54% | 13.94% | 20,439 |
+
+**About one in five exits with a precise amount can be traced to its entry**, against 0.14% by chance
+(shifted amount), and 7.75% even when services' re-entries are counted as chance. Round amounts and
+amounts with a few decimals show no measurable leak beyond coincidence: they blend in. That is the
+basis for the Exit Planner's advice.
+
+## 9. Limitations
 
 - A transaction that both shields and deshields nets out on the transparent side and is under-counted.
 - A shield of 20,000 zat or less, paid alongside its fee, is indistinguishable from a fee and is not
@@ -140,3 +238,7 @@ person.
 - Days are UTC calendar days from the dumps; a transaction's inputs, outputs and header always fall on
   the same day, so this doesn't split transactions.
 - Validation is a random sample of 20. It confirms the rules on every pool, but it isn't exhaustive.
+- Common-input clustering can merge unrelated parties that co-spend (for example through a service),
+  which shrinks the crowd and can overstate linkability for their exits.
+- The matcher tests one entry against one exit. Someone who splits an exit, or combines several
+  entries, is invisible to it, so the Leak Meter undercounts those patterns.

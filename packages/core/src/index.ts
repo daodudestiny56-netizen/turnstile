@@ -80,5 +80,12 @@ export {
 export type { ExitPlan, PlanOptions, PlannedLeg } from "./planner.js";
 export { STANDARD_DENOMINATIONS, bestCommonAmount } from "./denominations.js";
 export type { Denomination } from "./denominations.js";
-export { bech32mDecode, bech32mEncode, parseAddress, toTex } from "./address.js";
-export type { AddressKind, ParsedAddress } from "./address.js";
+export {
+  bech32mDecode,
+  bech32mEncode,
+  parseAddress,
+  parseRefundAddress,
+  toTex,
+} from "./address.js";
+export type { AddressKind, ParsedAddress, RefundAddress } from "./address.js";
+export { paymentUri } from "./zip321.js";

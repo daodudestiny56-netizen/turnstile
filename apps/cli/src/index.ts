@@ -5,6 +5,7 @@ import { countsCommand, ingestCommand } from "./ingest.js";
 import { meterCommand, validateCommand } from "./meter.js";
 import { snapshotCommand } from "./snapshot.js";
 import { checkCommand, planCommand } from "./preflight.js";
+import { destinationsHelp, quoteCommand, statusCommand } from "./intents.js";
 
 const DEFAULT_SNAPSHOT = "data/snapshot";
 
@@ -116,6 +117,29 @@ export function buildProgram(): Command {
     .option("--ics <file>", "write calendar reminders for the legs")
     .option("--snapshot <dir>", "verified snapshot bundle", DEFAULT_SNAPSHOT)
     .action(planCommand);
+
+  program
+    .command("quote")
+    .description(
+      "Quote one leg through NEAR Intents (dry by default; --live creates a deposit address).",
+    )
+    .argument("<zec>", "ZEC to swap, e.g. 1")
+    .requiredOption("--to <destination>", `what to receive: ${destinationsHelp()}`)
+    .requiredOption("--recipient <address>", "where the destination asset goes")
+    .requiredOption(
+      "--refund <zcash-address>",
+      "where ZEC goes back if the swap fails (u1/zs recommended)",
+    )
+    .option("--live", "create a real one-time deposit address (nothing is paid until you send ZEC)")
+    .option("--slippage <bps>", "slippage tolerance in basis points", "100")
+    .option("--save <file>", "save the signed quote (keep it in case of a dispute)")
+    .action(quoteCommand);
+
+  program
+    .command("status")
+    .description("Track a NEAR Intents swap by its deposit address.")
+    .argument("<deposit-address>")
+    .action(statusCommand);
 
   return program;
 }

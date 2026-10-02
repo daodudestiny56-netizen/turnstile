@@ -8,7 +8,7 @@
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-const BECH32M_CONST = 0x2bc830a3;
+export const BECH32M_CONST = 0x2bc830a3;
 
 /** Mainnet Base58Check version prefixes. */
 const P2PKH_PREFIX = [0x1c, 0xb8]; // t1
@@ -116,8 +116,14 @@ function convertBits(data: number[], from: number, to: number, pad: boolean): nu
   return out;
 }
 
-/** Decode a Bech32m string (BIP 350); undefined if malformed or the checksum is wrong. */
-export function bech32mDecode(s: string): { hrp: string; bytes: Uint8Array } | undefined {
+/**
+ * Bech32 (BIP 173, checksum constant 1) or Bech32m (BIP 350). No 90-character limit: unified
+ * addresses are longer.
+ */
+export function bech32Decode(
+  s: string,
+  constant: number,
+): { hrp: string; bytes: Uint8Array } | undefined {
   if (s !== s.toLowerCase() && s !== s.toUpperCase()) return undefined;
   const lower = s.toLowerCase();
   const sep = lower.lastIndexOf("1");
@@ -129,16 +135,26 @@ export function bech32mDecode(s: string): { hrp: string; bytes: Uint8Array } | u
     if (v < 0) return undefined;
     data.push(v);
   }
-  if (polymod([...hrpExpand(hrp), ...data]) !== BECH32M_CONST) return undefined;
+  if (polymod([...hrpExpand(hrp), ...data]) !== constant) return undefined;
   const bytes = convertBits(data.slice(0, -6), 5, 8, false);
   return bytes ? { hrp, bytes: new Uint8Array(bytes) } : undefined;
 }
 
-export function bech32mEncode(hrp: string, bytes: Uint8Array): string {
+/** Decode a Bech32m string (BIP 350); undefined if malformed or the checksum is wrong. */
+export function bech32mDecode(s: string): { hrp: string; bytes: Uint8Array } | undefined {
+  return bech32Decode(s, BECH32M_CONST);
+}
+
+/** Encode with Bech32 (constant 1) or Bech32m (BECH32M_CONST). */
+export function bech32Encode(hrp: string, bytes: Uint8Array, constant: number): string {
   const data = convertBits([...bytes], 8, 5, true)!;
-  const mod = polymod([...hrpExpand(hrp), ...data, 0, 0, 0, 0, 0, 0]) ^ BECH32M_CONST;
+  const mod = polymod([...hrpExpand(hrp), ...data, 0, 0, 0, 0, 0, 0]) ^ constant;
   const checksum = Array.from({ length: 6 }, (_, i) => (mod >>> (5 * (5 - i))) & 31);
   return `${hrp}1${[...data, ...checksum].map((v) => BECH32[v]).join("")}`;
+}
+
+export function bech32mEncode(hrp: string, bytes: Uint8Array): string {
+  return bech32Encode(hrp, bytes, BECH32M_CONST);
 }
 
 export type AddressKind = "t1" | "t3" | "tex" | "shielded" | "testnet" | "invalid";
@@ -206,4 +222,36 @@ export async function toTex(t1: string): Promise<string | undefined> {
     return undefined;
   }
   return bech32mEncode("tex", payload.slice(2));
+}
+
+export interface RefundAddress {
+  kind: "unified" | "sapling" | "t1" | "t3" | "tex";
+  /** Refunds to this address land in a shielded pool. */
+  shielded: boolean;
+}
+
+/**
+ * A Zcash address refunds can be sent to: shielded (unified u1, Sapling zs) or transparent (t1, t3,
+ * tex1). Unified addresses use Bech32m and Sapling addresses Bech32; checksums are verified.
+ */
+export async function parseRefundAddress(
+  input: string,
+): Promise<RefundAddress | { problem: string }> {
+  const s = input.trim();
+  const lower = s.toLowerCase();
+  if (lower.startsWith("u1")) {
+    return bech32Decode(s, BECH32M_CONST)?.hrp === "u"
+      ? { kind: "unified", shielded: true }
+      : { problem: "This unified address isn't valid: check it for typos." };
+  }
+  if (lower.startsWith("zs1")) {
+    return bech32Decode(s, 1)?.hrp === "zs"
+      ? { kind: "sapling", shielded: true }
+      : { problem: "This Sapling address isn't valid: check it for typos." };
+  }
+  const t = await parseAddress(s);
+  if (t.kind === "t1" || t.kind === "t3" || t.kind === "tex") {
+    return { kind: t.kind, shielded: false };
+  }
+  return { problem: t.problem ?? "Not a Zcash address." };
 }

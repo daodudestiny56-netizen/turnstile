@@ -1,5 +1,28 @@
 /**
- * NEAR Intents 1Click adapter. Implemented in section S7.
- * This is the only package allowed to talk to a third-party service (PRD P5).
+ * NEAR Intents 1Click adapter. This is the only package allowed to talk to a third-party service
+ * (PRD P5), and only when the user executes a leg.
  */
-export const INTENTS_ADAPTER = "near-intents-1click";
+export {
+  DESTINATIONS,
+  ZEC_ASSET_ID,
+  destination,
+  recipientProblem,
+  refundKindProblem,
+} from "./assets.js";
+export type { AddressFormat, DestinationAsset } from "./assets.js";
+export {
+  FINAL_STATUSES,
+  IntentsError,
+  ONECLICK_BASE_URL,
+  OneClickClient,
+  legQuoteRequest,
+} from "./client.js";
+export type {
+  ClientOptions,
+  LegQuoteInput,
+  Quote,
+  QuoteRequest,
+  QuoteResponse,
+  StatusResponse,
+  SwapStatus,
+} from "./client.js";

@@ -186,7 +186,7 @@ using anything.
 ### F6 NEAR Intents Execution
 - FR6.1 Adapter for 1Click: token list, dry quote, live quote (deposit address), status.
 - FR6.2 On Execute: re-run pre-flight for the leg → live quote → ZIP-321 URI `zcash:<addr>?amount=<x>` + QR → poll status.
-- FR6.3 UI discloses: 1Click sees this leg's amount; refunds may return via transparent address (verify `refundTo` support in S7).
+- FR6.3 UI discloses before any request: NEAR Intents sees this leg's amount, the recipient, the refund address and the user's IP address; the 0.25% fee without an API key. Refunds default to a shielded unified address (verified accepted in S7); Sapling is refused because NEAR Intents rejects it.
 
 ### F9 `@turnstile/core`
 - FR9.1 Zero native deps; runs in browser + Node; public API: `loadSnapshot`, `scoreExit`, `planExit`, `meterStats`.
@@ -314,17 +314,26 @@ Labels are computed on the fly and reported as aggregates only (P7).
 - [x] Playwright: load app → run check (a real round trip, red) → run plan → download calendar → Leak Meter table and theme switch: **0 network requests after snapshot load** (P1), 0 to any other origin, 0 console errors or CSP violations
 - [x] Build-output scan finds no external origins except the allowlist: the 1Click API, github.com links, and two never-fetched identifier strings (www.w3.org SVG namespace, react.dev error text) (P3)
 - [x] Works at 375 px width and desktop; light/dark: no horizontal overflow on any page, and the axe accessibility audit reports no serious or critical issues on any page, in either theme, at either size (16 of 16 combinations)
+- [x] Router race fixed (Oct 2, found by the S7 run): a navigation right after the first render could be missed; regression test fails without the fix
 - [x] Hardening (added Sep 30): load failures (missing, tampered, slow, flaky, crashed engine, in-transit decompression) show a reason and recover with Try again; every input error is explained; TEX (ZIP 320) and checksummed destination addresses; amounts removed from URL and history; nothing stored but the theme; per-page titles and focus; no sideways scrolling from 320 to 1440 px. 219 of 219 e2e tests pass in all three browsers
 - [x] Planner never produces legs that add up to the deposit minus fees (found on review; search-based leg choice, unit, e2e and real-data tests)
 - [x] Production build verified locally from a clean browser context. **Decision (Sep 30):** the public deploy moves to S9, so the project isn't exposed before judging (submissions are sealed); S9's checks already cover the live URL
 
 ### S7 — NEAR Intents execution
-**Build:** `packages/intents` (tokens, dry quote, live quote, status); Execute flow per FR6.2; ZIP-321 QR; status polling; disclosure copy.
+**Build:** `@turnstile/intents` (1Click client: dry quote, live quote, status; built-in destinations; recipient checks); core ZIP 321 payment URIs and refund-address validation; CLI `turnstile quote` / `turnstile status`; web Execute panel per leg (disclosure, price, deposit address, QR, status polling, signed-quote download). Independent checks: `scripts/verify-intents.mjs` (live API, no funds) and `e2e/execute.spec.ts`.
+
+**Facts established against the live API (Oct 2, 2026):**
+- ZEC deposit addresses are **one-time transparent t1 addresses** (checksum-verified by Turnstile). Paying one from a shielded wallet is a withdrawal from the pool, which is exactly what Turnstile plans.
+- Refund addresses: **unified (u1, including Orchard-only), t1, t3 and tex1 are accepted; Sapling (zs) is rejected** ("refundTo is not valid"). Turnstile refuses Sapling up front and recommends a fresh unified address so refunds stay shielded.
+- The API allows browser calls (`Access-Control-Allow-Origin: *`), so the page calls it directly: no proxy that could log anything.
+- No API key: a static site can't keep one secret. NEAR Intents then adds 0.25%, which the UI and CLI disclose.
+- Requested deadlines of 3 hours come back as about 3 days for ZEC; the UI shows the deadline returned.
+
 **Acceptance:**
-- [ ] Dry quote for ZEC → USDC returns successfully from CLI
-- [ ] Confirm and document: ZEC deposit address type; `refundTo` accepted formats
-- [ ] Playwright: no Intents request before clicking Execute (P5)
-- [ ] Live quote returns a real deposit address; ZIP-321 URI + QR render; status polling shows "waiting for deposit" ($0 — nothing is paid)
+- [x] Dry quote for ZEC → USDC returns successfully from CLI (and a dry quote to each of the 8 built-in destinations)
+- [x] Confirm and document: ZEC deposit address type; `refundTo` accepted formats (above)
+- [x] Playwright: no Intents request before clicking Execute, nor before asking for a price; invalid recipients and Sapling refunds are refused with zero requests (P5)
+- [x] Live quote returns a real deposit address; ZIP-321 URI + QR render; status polling shows "waiting for deposit" ($0, nothing is paid). Live from the CLI and the acceptance script; the browser flow against a mocked API in Chromium, Firefox and WebKit; a real dry quote from the page in all three browsers (`LIVE_INTENTS=1`)
 - [ ] *Optional, only if someone donates a small amount:* one real leg reaches SUCCESS
 
 ### S8 — Should-ship (conditional)

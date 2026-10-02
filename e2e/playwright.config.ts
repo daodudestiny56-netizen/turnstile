@@ -12,7 +12,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 20_000 },
   fullyParallel: true,
-  workers: 3,
+  // Three browsers in parallel on one machine starved WebKit and crashed Firefox's compositor.
+  workers: 2,
   retries: 0,
   reporter: [["list"]],
   outputDir: "../data/e2e-results",

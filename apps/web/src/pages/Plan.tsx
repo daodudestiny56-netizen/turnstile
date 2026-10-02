@@ -6,6 +6,7 @@ import { dateTime, fromLocalInput, nowSec, toLocalInput, zec } from "../format";
 import { Download, Refresh, Route as RouteIcon } from "../icons";
 import { parseAmountInput, useForgetParams } from "../inputs";
 import type { PlanResult } from "../protocol";
+import { ExecutePanel } from "./Execute";
 
 /** A fresh random seed per plan, so different people's schedules never line up. */
 function randomSeed(): number {
@@ -218,6 +219,7 @@ function PlanView({
   onReshuffle: () => void;
 }): ReactNode {
   const { plan, ics } = result;
+  const [executing, setExecuting] = useState<number>();
   const verdict = plan.legs.length ? planVerdict(plan) : "amber";
   const download = (): void => {
     const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
@@ -271,7 +273,18 @@ function PlanView({
                     {dateTime(leg.time)} · hides among {leg.crowd} others
                   </div>
                 </div>
-                <Tag verdict={leg.check.verdict} />
+                <div className="leg-actions">
+                  <Tag verdict={leg.check.verdict} />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    aria-label={`Execute withdrawal ${i + 1}: ${zec(leg.amount)}`}
+                    aria-expanded={executing === i}
+                    onClick={() => setExecuting(executing === i ? undefined : i)}
+                  >
+                    Execute
+                  </button>
+                </div>
               </li>
             ))}
           </ol>
@@ -322,9 +335,19 @@ function PlanView({
           <Refresh size={18} /> New random schedule
         </button>
       </div>
+      {executing !== undefined && plan.legs[executing] && (
+        <ExecutePanel
+          key={executing}
+          leg={plan.legs[executing]!}
+          index={executing}
+          count={plan.legs.length}
+          onClose={() => setExecuting(undefined)}
+        />
+      )}
       <p className="data-note">
         Times are random for each plan so that people using Turnstile don't all withdraw at the same
-        moments. Executing each withdrawal through NEAR Intents arrives in the next release.
+        moments. Execute sends one withdrawal at a time through NEAR Intents: nothing is contacted
+        until you ask for a price.
       </p>
     </div>
   );

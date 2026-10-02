@@ -54,6 +54,21 @@ test.describe("loading the data snapshot", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
+  test("a navigation right after the page loads isn't missed", async ({ page }) => {
+    // The sequence that exposed a race: the app rendered, then the hash changed before the app
+    // had subscribed to hash changes, so it stayed on the old page.
+    await page.setViewportSize({ width: 375, height: 800 });
+    for (const [route, heading] of [
+      ["#/check", "Would this withdrawal"],
+      ["#/meter", "How often withdrawals"],
+      ["#/plan", "Split a withdrawal"],
+    ] as const) {
+      await page.goto("");
+      await page.goto(route);
+      await expect(page.getByRole("heading", { level: 1 })).toContainText(heading);
+    }
+  });
+
   test("the landing page works before the data arrives", async ({ page }) => {
     await page.goto("slow/");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Leave the shielded pool");

@@ -124,7 +124,7 @@ export function App(): ReactNode {
     if (firstRender.current) firstRender.current = false;
     else document.getElementById("main")?.focus({ preventScroll: true });
   }, [route.path]);
-  const key = window.location.hash;
+  const key = `${route.path}#${route.nav}`;
   let page: ReactNode;
   switch (route.path) {
     case "/check":

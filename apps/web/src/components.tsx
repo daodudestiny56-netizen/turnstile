@@ -17,17 +17,26 @@ function readRoute(): Route {
   return { path, params: new URLSearchParams(query) };
 }
 
-export function useRoute(): Route {
-  const [route, setRoute] = useState(readRoute);
+/**
+ * The current hash route, plus a counter that changes on every real navigation (pages are keyed by
+ * it, so following a link remounts them). Quietly removing parameters from the URL (useForgetParams)
+ * is not a navigation and doesn't count.
+ */
+export function useRoute(): Route & { nav: number } {
+  const [state, setState] = useState(() => ({ route: readRoute(), nav: 0 }));
   useEffect(() => {
     const onChange = (): void => {
-      setRoute(readRoute());
+      setState((s) => ({ route: readRoute(), nav: s.nav + 1 }));
       window.scrollTo(0, 0);
     };
     window.addEventListener("hashchange", onChange);
+    // A navigation between the first render and this subscription would otherwise be missed.
+    setState((s) =>
+      readRoute().path === s.route.path ? s : { route: readRoute(), nav: s.nav + 1 },
+    );
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return route;
+  return { ...state.route, nav: state.nav };
 }
 
 export function href(path: string, params?: Record<string, string | undefined>): string {

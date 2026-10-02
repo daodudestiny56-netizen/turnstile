@@ -123,8 +123,8 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
-| S6 | Web app: landing page, check, planner and Leak Meter; 219 end-to-end tests in Chromium, Firefox and WebKit | Done |
-| S7 | NEAR Intents execution | Next |
+| S6 | Web app: landing page, check, planner and Leak Meter; 246 end-to-end tests in Chromium, Firefox and WebKit | Done |
+| S7 | NEAR Intents execution: price, one-time deposit address, payment QR and live status for each leg | Done, pending sign-off |
 | S9 | Docs, deployment, demo | Planned |
 
 What S1 proved, on July 1 – September 28, 2026:
@@ -182,6 +182,10 @@ node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-09-29T
 node apps/cli/dist/bin.js check 0.5
 node apps/cli/dist/bin.js plan 3.1742 --hours 48 --ics plan.ics
 node scripts/verify-preflight.mjs   # acceptance checks on real deposits
+
+# one leg through NEAR Intents: a price only (no deposit address) unless you add --live
+node apps/cli/dist/bin.js quote 1 --to usdc-base --recipient 0x... --refund u1...
+node scripts/verify-intents.mjs     # live checks against NEAR Intents; no funds move
 ```
 
 Downloads are cached in `data/`, so each file is fetched once. Blockchair limits free downloads to about

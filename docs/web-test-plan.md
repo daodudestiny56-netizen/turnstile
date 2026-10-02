@@ -7,6 +7,7 @@ engine) against a test server that can inject faults (`e2e/serve.mjs`).
 ```sh
 pnpm build
 pnpm e2e                      # all three browsers
+LIVE_INTENTS=1 pnpm e2e execute.spec.ts -g "real NEAR Intents"   # also call the real API (no funds)
 pnpm e2e --project=chromium   # one browser
 ```
 
@@ -26,6 +27,7 @@ pnpm e2e --project=chromium   # one browser
 | Browser too old to decompress | Clear message: update the browser | worker code |
 | JavaScript disabled | `<noscript>` explains why it's needed | index.html |
 | The landing page opened before the data arrives | Fully usable; the check runs once data is ready | `load.spec` landing |
+| The route changes right after the page renders, before the app listens for changes | Caught: the router re-checks the path after subscribing (the test fails in WebKit without this) | `load.spec` navigation right after load |
 
 ## Input
 
@@ -51,6 +53,22 @@ pnpm e2e --project=chromium   # one browser
 | Legs add up to the deposit minus fees (grouping attack) | Never: the planner searches for the most it can withdraw with no such group, and says what it held back | `plan.spec`; unit tests; real-data check (12 plans) |
 | Same schedule for everyone | Fresh random seed per plan | `plan.spec` new schedule |
 | Invalid calendar file | RFC 5545, lines folded at 75 octets, one event per leg | `plan.spec`; unit tests |
+
+## Execute through NEAR Intents
+
+| Failure | What happens | Test |
+|---|---|---|
+| A request to NEAR Intents before the user acts | None: not on opening Execute, not while typing; only on "Get a price" | `execute.spec` |
+| Recipient in the wrong format for the chosen chain | Refused locally, zero requests | `execute.spec` |
+| Sapling refund address (NEAR Intents rejects it) | Refused locally with a fix (use u1), zero requests | `execute.spec`; `verify-intents.mjs` |
+| Transparent refund address | Allowed, with a note that refunds would be public | `execute.spec` |
+| NEAR Intents returns an error | Its message is shown | `execute.spec`; unit tests |
+| Network failure | "Couldn't reach NEAR Intents" | unit tests |
+| Executing a leg before its planned time | Timing warning | `execute.spec` |
+| Deposit address, QR or payment link wrong | Address shown verbatim, `zcash:` URI with the exact leg amount, QR drawn from it | `execute.spec`; unit tests |
+| Status never updates or never stops | Polled every 15 s until SUCCESS, REFUNDED or FAILED; manual "Check status now" | `execute.spec` |
+| CORS or the CSP blocks the real API | A real dry quote from the page works in all three browsers | `execute.spec` with `LIVE_INTENTS=1` |
+| The built-in asset list goes stale | Checked against the live token list | `verify-intents.mjs` |
 
 ## Privacy
 
@@ -91,6 +109,10 @@ pnpm e2e --project=chromium   # one browser
 - Amounts passed between pages stayed in the browser history.
 - A deposit dated after the withdrawal gave a misleading green instead of an error.
 - The planner could choose legs that add up to the deposit minus fees.
+- A navigation in the moment between the first render and the router subscribing was missed,
+  leaving the old page on screen (reproducible in WebKit).
+- NEAR Intents rejects Sapling refund addresses; Turnstile accepted them until the live check
+  showed it.
 
 ## Not covered by automated tests
 

@@ -124,7 +124,7 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
 | S6 | Web app: landing page, check, planner and Leak Meter; 246 end-to-end tests in Chromium, Firefox and WebKit | Done |
-| S7 | NEAR Intents execution: price, one-time deposit address, payment QR and live status for each leg | Done, pending sign-off |
+| S7 | NEAR Intents execution: price, one-time deposit address, payment QR and live status for each leg | Done |
 | S9 | Docs, deployment, demo | Planned |
 
 What S1 proved, on July 1 – September 28, 2026:
@@ -257,6 +257,16 @@ point. A transaction that shields and deshields in the same step nets out and is
 from Blockchair's dumps today; the ingestion layer is built so a Zcash node (Zebra) can replace them without
 changing anything downstream. A low anonymity score is a warning about what an observer *could* infer, not
 proof that anyone has.
+
+## Related work
+
+Turnstile builds on [Quesnelle (2017)](https://arxiv.org/abs/1712.01210), which matched round trips by
+amount and time in the Sprout era. [Zec Tracker](https://zcash-explorer.net/analysis.html) offers an
+on-demand scanner that correlates shields and deshields with adjustable tolerances, for investigating
+what already happened. Turnstile asks a different question, before the fact: is the withdrawal *you are
+about to make* linkable, and what should you do instead? To answer it honestly, it measures every result
+against chance, separates services from people, and plans legs that can't be added back up to your
+deposit. It runs entirely on your device.
 
 ## License
 

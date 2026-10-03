@@ -38,7 +38,7 @@ No wallet warns about this today.
 |---|---|---|
 | **Privacy** — "does it actually preserve privacy… leaks are disqualifying" | Our tool finds a real leak **and** leaks nothing itself: all user checks run locally, zero network requests during a check, no telemetry, no keys handled | S5, S6 (automated "zero requests" test), threat model |
 | **Usefulness** — "would someone use this on Monday" | A person about to swap ZEC opens the web app, gets a red/green verdict and a plan in < 1 min | S5, S6, S7 |
-| **Execution** — "does it run. Working beats ambitious" | Live public URL, one-command CLI, CI green, every section verified, real mainnet swap in the demo | Every section's acceptance tests |
+| **Execution** — "does it run. Working beats ambitious" | Live public URL, one-command CLI, CI green, every section verified, a real NEAR Intents deposit address and QR in the demo (a completed swap needs funds; shown only if someone donates a small amount) | Every section's acceptance tests |
 | **Originality** — "built for this hackathon" | Novel mainnet measurement + method + fix; no one else will have the number | S3, methodology doc |
 
 **The demo moment:** "Of all Zcash exits with a precise amount, one in six traces back to a service's deposit.
@@ -355,8 +355,6 @@ Only if S0–S7 are done by Oct 24. F5 Entry Planner and/or F8 Personal Audit, e
 
 ## 12. Budget
 
-| Item | Cost |
-|---|---|
 **Total: $0.**
 
 | Item | Cost |

@@ -13,3 +13,6 @@ data/
 
 # web build output and the copied snapshot
 apps/web/public/snapshot/
+
+# private strategy notes
+strategy/

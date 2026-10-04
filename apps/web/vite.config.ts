@@ -5,7 +5,13 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SNAPSHOT_FILES = ["manifest.json", "snapshot.bin.gz", "addresses.bin", "stats.json"];
+const SNAPSHOT_FILES = [
+  "manifest.json",
+  "snapshot.bin.gz",
+  "addresses.bin",
+  "stats.json",
+  "audit.bin.gz",
+];
 
 /** Copy the verified snapshot bundle (built by `turnstile snapshot`) into the site. */
 function snapshotBundle(): Plugin {

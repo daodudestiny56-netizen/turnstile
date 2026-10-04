@@ -4,6 +4,7 @@
 //   /plain/       .gz files sent as stored (no Content-Encoding)
 //   /missing/     every snapshot file returns 404
 //   /tampered/    snapshot.bin.gz has one byte flipped
+//   /tampered-audit/  audit.bin.gz has one byte flipped (the other files are intact)
 //   /slow/        snapshot files are delayed by 3 seconds
 //   /noworker/    the analysis worker script returns 404
 //   /flaky/<id>/  the first manifest request for each <id> fails with 500; later ones succeed
@@ -15,7 +16,7 @@ import { extname, join, normalize, resolve } from "node:path";
 
 const dist = resolve("apps/web/dist");
 const port = Number(process.argv[2] ?? 4174);
-const MODES = ["plain", "missing", "tampered", "slow", "noworker"];
+const MODES = ["plain", "missing", "tampered-audit", "tampered", "slow", "noworker"];
 const flakyFailed = new Set();
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -53,7 +54,10 @@ createServer(async (req, res) => {
   } catch {
     return res.writeHead(404).end();
   }
-  if (mode === "tampered" && path.endsWith("snapshot.bin.gz")) {
+  if (
+    (mode === "tampered" && path.endsWith("snapshot.bin.gz")) ||
+    (mode === "tampered-audit" && path.endsWith("audit.bin.gz"))
+  ) {
     body = Buffer.from(body);
     body[body.length >> 1] ^= 1;
   }
@@ -61,7 +65,7 @@ createServer(async (req, res) => {
     "content-type": types[extname(file)] ?? "application/octet-stream",
     "cache-control": "no-store",
   };
-  if (mode !== "plain" && mode !== "tampered" && file.endsWith(".gz")) {
+  if (mode !== "plain" && !mode?.startsWith("tampered") && file.endsWith(".gz")) {
     headers["content-encoding"] = "gzip";
   }
   res.writeHead(200, headers).end(body);

@@ -70,6 +70,20 @@ pnpm e2e --project=chromium   # one browser
 | CORS or the CSP blocks the real API | A real dry quote from the page works in all three browsers | `execute.spec` with `LIVE_INTENTS=1` |
 | The built-in asset list goes stale | Checked against the live token list | `verify-intents.mjs` |
 
+## Entry Planner and Personal Audit
+
+| Failure | What happens | Test |
+|---|---|---|
+| The audit index fails to download or is altered | Only the audit is unavailable, with the reason and "Try again"; every other tool keeps working | `audit.spec` altered audit file |
+| Running an audit reveals who audits | The index downloads in the background for every visitor; auditing makes zero requests and leaves nothing in the URL | `audit.spec`, `privacy.spec` |
+| The audit is pointed at someone else's address | For addresses not entered, only "a link exists" is shown, never the amount, time or address | unit tests; `verify-audit.mjs` |
+| Shielded, invalid or duplicate addresses | Explained one by one; a tex1 and its t1 count once | `audit.spec`; unit tests |
+| An address that never crossed | "No crossings found", with the dates covered | `audit.spec` |
+| Very busy addresses | The most recent 300 deposits and withdrawals are audited, and the page says so | unit tests; `verify-audit.mjs` |
+| A long address in a message overflows a phone screen | Messages wrap anywhere | `audit.spec` 320 px |
+| Deposit amount empty, invalid or too small for the fee | Specific message, nothing computed | `enter.spec` |
+| Advice that moves too little into the pool, or can be summed back up | Replaced: the first option is to deposit everything and leave through the Exit Planner | `verify-entry.mjs` |
+
 ## Privacy
 
 | Failure | What happens | Test |
@@ -99,6 +113,18 @@ pnpm e2e --project=chromium   # one browser
 | Phone menu | Opens, closes on navigation, reports `aria-expanded`; hidden on desktop | `layout.spec` |
 | Theme | Dark by default, light persists across reloads, works when storage is blocked | `theme.spec` |
 
+## Speed
+
+| Failure | What happens | Test |
+|---|---|---|
+| A tool feels slow | Every tool answers within a second in every browser, measured inside the page (median of three; measured: 15 to 95 ms) | `speed.spec`, run last and one browser at a time so nothing competes for the CPU |
+| The first check after loading waits for one-time work | The common amounts are computed right after the data loads, while the user is still typing | `speed.spec` |
+| The background audit download delays the other tools | It starts after that work, and the tools answer while it runs | `speed.spec`, `audit.spec` |
+
+Playwright's WebKit on Windows is far slower to *drive* than the page is to respond (a click can take
+seconds of automation overhead while the app answers in under 100 ms), so WebKit tests get a longer
+timeout. `speed.spec` keeps the app itself to a strict budget.
+
 ## Bugs these tests found
 
 - The snapshot was rejected when the host decompressed it in transit (Vite preview, many CDNs).
@@ -113,6 +139,9 @@ pnpm e2e --project=chromium   # one browser
   leaving the old page on screen (reproducible in WebKit).
 - NEAR Intents rejects Sapling refund addresses; Turnstile accepted them until the live check
   showed it.
+- The Pre-flight Check called a withdrawal an hour after a common deposit green, while an observer
+  picking the closest deposit in time would be right 85% of the time (found by the S8 backtest).
+- On a phone, an address quoted in an audit message pushed the page 64 px wider than the screen.
 
 ## Not covered by automated tests
 

@@ -123,7 +123,7 @@ function Stats(): ReactNode {
         </div>
         <div className="stat">
           <span className="stat-value">0</span>
-          <span className="stat-label">requests sent while you check or plan</span>
+          <span className="stat-label">requests sent while you check, plan or audit</span>
         </div>
       </section>
       {ready && (
@@ -173,6 +173,51 @@ function HowItWorks(): ReactNode {
               <p>{s.body}</p>
             </article>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BeforeAndAfter(): ReactNode {
+  return (
+    <section className="section" aria-labelledby="both-ends-title">
+      <div className="container">
+        <div className="section-head">
+          <span className="eyebrow">Both ends of the trip</span>
+          <h2 id="both-ends-title">Plan the way in. Audit what's already happened.</h2>
+          <p className="lead">
+            A leak needs two matching crossings. Turnstile helps with the deposit before you make
+            it, and shows which of your past crossings already line up.
+          </p>
+        </div>
+        <div className="grid-2">
+          <article className="card feature-card">
+            <span className="icon-tile">
+              <Database />
+            </span>
+            <h3>Entry Planner</h3>
+            <p>
+              A precise deposit nobody else makes is a fingerprint. See whether yours would be one,
+              and how to deposit so that it isn't.
+            </p>
+            <a className="btn btn-ghost" href={href("/enter")}>
+              Plan a deposit <ArrowRight size={18} />
+            </a>
+          </article>
+          <article className="card feature-card">
+            <span className="icon-tile">
+              <Eye />
+            </span>
+            <h3>Personal Audit</h3>
+            <p>
+              Enter your transparent addresses and see which of your past withdrawals an observer
+              could trace back to your deposits.
+            </p>
+            <a className="btn btn-ghost" href={href("/audit")}>
+              Audit your addresses <ArrowRight size={18} />
+            </a>
+          </article>
         </div>
       </div>
     </section>
@@ -236,7 +281,7 @@ function Privacy(): ReactNode {
     {
       icon: <Eye />,
       title: "Download everything, ask nothing",
-      body: "Every visitor downloads the same 1 MB file. Your amounts are compared on your device, so no server can learn them.",
+      body: "Every visitor downloads the same public files, about 2 MB. Your amounts and addresses are compared on your device, so no server can learn them.",
     },
     {
       icon: <Lock />,
@@ -301,6 +346,7 @@ export function Landing(): ReactNode {
       <Hero />
       <Stats />
       <HowItWorks />
+      <BeforeAndAfter />
       <Finding />
       <Privacy />
       <Cta />

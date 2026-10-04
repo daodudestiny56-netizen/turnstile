@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { fillCheck, fixtures, waitForData } from "./fixtures";
 
 const WIDTHS = [320, 375, 768, 1024, 1440];
-const ROUTES = ["", "#/check", "#/plan", "#/meter"];
+const ROUTES = ["", "#/enter", "#/check", "#/plan", "#/audit", "#/meter"];
 
 for (const width of WIDTHS) {
   test(`no page scrolls sideways at ${width}px`, async ({ page }) => {

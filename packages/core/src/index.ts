@@ -31,10 +31,11 @@ export {
   SNAPSHOT_VERSION,
   SnapshotFormatError,
   canonicalizeSnapshot,
+  canonicalizeSnapshotWithOrder,
   decodeSnapshot,
   encodeSnapshot,
 } from "./snapshot.js";
-export type { SnapshotData } from "./snapshot.js";
+export type { CanonicalSnapshot, SnapshotData } from "./snapshot.js";
 export {
   ADDRESS_HASH_BYTES,
   AddressSet,
@@ -46,6 +47,7 @@ export {
   loadSnapshot,
   parseManifest,
   sha256Hex,
+  verifyGzipped,
 } from "./integrity.js";
 export type { Manifest, ManifestFile, VerifiedSnapshot } from "./integrity.js";
 export { listCandidates } from "./matcher.js";
@@ -89,3 +91,25 @@ export {
 } from "./address.js";
 export type { AddressKind, ParsedAddress, RefundAddress } from "./address.js";
 export { paymentUri } from "./zip321.js";
+export {
+  AUDIT_MAX_ADDRESSES,
+  AUDIT_MAX_EVENTS,
+  AUDIT_VERSION,
+  AuditIndex,
+  AuditInputError,
+  auditAddresses,
+  encodeAudit,
+  loadAudit,
+  splitAddresses,
+} from "./audit.js";
+export type {
+  AuditCode,
+  AuditFinding,
+  AuditRefs,
+  AuditResult,
+  AuditedAddress,
+  AuditedDeposit,
+  AuditedWithdrawal,
+} from "./audit.js";
+export { SHIELD_FEE_ZAT, planEntry } from "./entry.js";
+export type { EntryAdvice, EntryCode, EntryOptions, EntryReason } from "./entry.js";

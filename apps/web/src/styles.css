@@ -678,6 +678,11 @@ select.input {
   align-items: start;
 }
 
+/* Grid items default to their content's minimum width; let them shrink so long content wraps. */
+.tool-grid > * {
+  min-width: 0;
+}
+
 @media (min-width: 1000px) {
   .tool-grid {
     grid-template-columns: 420px 1fr;
@@ -1406,4 +1411,92 @@ th {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--card);
+}
+
+/* ----- Entry Planner and Personal Audit ----- */
+
+.textarea {
+  /* A textarea's default 20 columns would otherwise set the card's minimum width. */
+  width: 100%;
+  min-width: 0;
+  min-height: 140px;
+  resize: vertical;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.card-title {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.advice.numbered {
+  list-style: decimal;
+  padding-left: 22px;
+}
+
+.reasons.compact {
+  margin-top: 10px;
+}
+
+.reasons.compact li {
+  padding: 10px 0 0;
+}
+
+.tag-neutral {
+  color: var(--text-2);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+}
+
+.address-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.address-list li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mono {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+.events {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.event {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.event:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.event-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Messages can quote a full address, one long word; let it wrap on narrow screens. */
+.reasons p {
+  overflow-wrap: anywhere;
 }

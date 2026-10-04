@@ -15,6 +15,7 @@ import {
   historyNeededSec,
   listCandidates,
   scoreExit,
+  type Candidate,
   type ExitQuery,
   type MatchParams,
 } from "./matcher.js";
@@ -40,6 +41,7 @@ export type ReasonCode =
   | "unique-match"
   | "address-reuse"
   | "thin-crowd"
+  | "best-guess"
   | "precise-amount"
   | "stale-data"
   | "crowd"
@@ -130,6 +132,25 @@ export class PreflightRangeError extends Error {
   }
 }
 
+/**
+ * Would an observer's single best guess, the matching deposit with the most weight by amount and
+ * timing, be the user's own? Rivals are the other entities' fee-shaped candidates, weighed at the
+ * same reference time as the user's deposit.
+ */
+function ownIsBestGuess(
+  rivals: readonly Candidate[],
+  own: OwnDeposit,
+  at: number,
+  p: MatchParams,
+): boolean {
+  const byEntity = new Map<number, number>();
+  for (const c of rivals) {
+    if (c.feeShaped) byEntity.set(c.entity, (byEntity.get(c.entity) ?? 0) + c.weight);
+  }
+  const ownWeight = 1 / (1 + (at - own.time) / p.tauSec);
+  return [...byEntity.values()].every((w) => ownWeight > w);
+}
+
 export async function preflight(
   ctx: PreflightContext,
   exit: PlannedExit,
@@ -208,6 +229,18 @@ export async function preflight(
         "crowd",
         "green",
         `Your deposit matches, but so do deposits by ${crowd} other parties. You'd be one of ${crowd + 1}.`,
+      );
+    }
+    if (
+      ownMatches &&
+      crowd > 0 &&
+      ownIsBestGuess(candidates, own, own.time < measured.time ? measured.time : exit.time, p)
+    ) {
+      add(
+        "best-guess",
+        "amber",
+        "Of the deposits that match, yours is the closest in time, so an observer who picks the " +
+          "most likely one would pick yours. Waiting longer lets timing stop pointing at you.",
       );
     }
   } else {

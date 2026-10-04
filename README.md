@@ -40,6 +40,8 @@ No wallet warns them.
 | **Pre-flight Check** | Type in the withdrawal you're about to make. Turnstile tells you how many other deposits it could plausibly belong to — and whether the answer is "just yours". |
 | **Exit Planner** | Splits a withdrawal into amounts that are common on-chain, at times that match normal network activity, and scores each leg. What doesn't blend in stays shielded. |
 | **Address-reuse Detector** | Catches the most common self-own: withdrawing to the same transparent address you shielded from. |
+| **Entry Planner** | Half of every leak is made on the way in. Before you deposit, see whether the amount would be a fingerprint, and how to deposit so that it isn't. |
+| **Personal Audit** | Enter your transparent addresses and see which of your past withdrawals an observer could trace back to your deposits. For addresses you didn't enter, it says only that a link exists, never where it leads. |
 | **NEAR Intents execution** | Each leg of a plan becomes a real cross-chain swap: a just-in-time quote, a one-time deposit address, and a [ZIP-321](https://zips.z.cash/zip-0321) payment QR that you pay from your own wallet. |
 | **`@turnstile/core`** | The engine as a small, dependency-free TypeScript library, so any wallet can show the warning to its users. |
 
@@ -49,7 +51,8 @@ A tool that warns about leaks must not leak. These are hard requirements, and ea
 
 - **Download everything, query nothing.** The amount you plan to withdraw is the secret. Instead of asking a
   server "is 3.1742 risky?", your device downloads the same public data file as every other user and does
-  the maths locally. After that file loads, a check or plan makes **zero network requests**.
+  the maths locally. After that file loads, a check, plan or audit makes **zero network requests**. The
+  audit index downloads in the background for every visitor, so fetching it says nothing about who audits.
 - **No keys, ever.** Turnstile never asks for a seed phrase or signs anything. Execution hands off to your own
   wallet through a standard payment request.
 - **No third parties.** No analytics, no trackers, no remote fonts or scripts. The only external service is
@@ -57,7 +60,7 @@ A tool that warns about leaks must not leak. These are hard requirements, and ea
 - **Aggregates only.** The Leak Meter publishes statistics, never a list of which transactions are linked to
   which.
 - **Verifiable data.** Every data file comes with a hash, and anyone can rebuild it from public chain data
-  and get the same bytes. The whole download is about 1 MB, and the app checks every hash before using any
+  and get the same bytes. The whole download is about 2 MB, and the app checks every hash before using any
   of it: a single altered byte is rejected.
 
 ## What we've found so far
@@ -110,6 +113,19 @@ of the 5,000-zat fee unit, it counts a service's thousands of deposits as one pa
 an amount that anyone else used in the previous two weeks. In 3,000 planted round trips it never blamed
 the wrong deposit. The method, calibration and every figure are in [docs/methodology.md](docs/methodology.md).
 
+**Timing leaks on its own.** A common amount hides you from amount matching, not from the clock. In 600
+planted deposits on mainnet, an observer who simply picks the matching deposit closest in time was right:
+
+| Withdrawn after | Precise amount, withdrawn whole | Common amount, withdrawn whole | Everything deposited, Exit Planner legs |
+|---|---|---|---|
+| 1 hour | 99.8% | 84.9% | 0.0% |
+| 1 day | 96.8% | 10.8% | 0.0% |
+| 3 days | 93.2% | 3.5% | 0.0% |
+
+Waiting doesn't save a precise amount, and a common amount needs time too. Splitting the exit so no part
+matches the deposit removes both. The Pre-flight Check and the Personal Audit flag a withdrawal whose
+deposit would be the closest in time ([verify-entry.mjs](scripts/verify-entry.mjs)).
+
 ## Status
 
 Turnstile is being built in public sections, and each one must pass its acceptance tests before the next
@@ -123,8 +139,9 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
-| S6 | Web app: landing page, check, planner and Leak Meter; 246 end-to-end tests in Chromium, Firefox and WebKit | Done |
+| S6 | Web app: landing page, check, planner and Leak Meter; now 298 end-to-end tests in Chromium, Firefox and WebKit | Done |
 | S7 | NEAR Intents execution: price, one-time deposit address, payment QR and live status for each leg | Done |
+| S8 | Entry Planner and Personal Audit, backtested on mainnet; the Check now warns about timing too | Done, pending sign-off |
 | S9 | Docs, deployment, demo | Planned |
 
 What S1 proved, on July 1 – September 28, 2026:
@@ -182,6 +199,11 @@ node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-09-29T
 node apps/cli/dist/bin.js check 0.5
 node apps/cli/dist/bin.js plan 3.1742 --hours 48 --ics plan.ics
 node scripts/verify-preflight.mjs   # acceptance checks on real deposits
+
+node apps/cli/dist/bin.js enter 3.1742          # before depositing: is the amount a fingerprint?
+node apps/cli/dist/bin.js audit t1... t1...     # which past withdrawals point back at you
+node scripts/verify-entry.mjs       # backtest of the deposit advice on mainnet
+node scripts/verify-audit.mjs       # audit acceptance checks on real addresses
 
 # one leg through NEAR Intents: a price only (no deposit address) unless you add --live
 node apps/cli/dist/bin.js quote 1 --to usdc-base --recipient 0x... --refund u1...

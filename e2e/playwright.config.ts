@@ -30,8 +30,23 @@ export default defineConfig({
     reuseExistingServer: false,
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /speed.spec.ts/ },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testIgnore: /speed.spec.ts/ },
+    // Driving WebKit on Windows is several times slower than the page itself (a click can take
+    // seconds of automation overhead while the app answers in under 300 ms), so its tests get more
+    // time. speed.spec.ts measures the app's own response times inside the page in every browser.
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+      testIgnore: /speed.spec.ts/,
+      timeout: 150_000,
+    },
+    // Response times are measured last, one browser at a time, so other tests don't compete for CPU.
+    {
+      name: "speed",
+      testMatch: /speed.spec.ts/,
+      dependencies: ["chromium", "firefox", "webkit"],
+      timeout: 300_000,
+    },
   ],
 });

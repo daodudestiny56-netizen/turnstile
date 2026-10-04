@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { href, useRoute, useTheme } from "./components";
 import { LogoMark, Menu, Moon, Sun } from "./icons";
+import { AuditPage } from "./pages/Audit";
 import { CheckPage } from "./pages/Check";
+import { EnterPage } from "./pages/Enter";
 import { Landing } from "./pages/Landing";
 import { MeterPage } from "./pages/Meter";
 import { PlanPage } from "./pages/Plan";
@@ -9,8 +11,10 @@ import { PlanPage } from "./pages/Plan";
 const REPO = "https://github.com/daodudestiny56-netizen/turnstile";
 
 const NAV = [
+  { path: "/enter", label: "Entry Planner" },
   { path: "/check", label: "Pre-flight Check" },
   { path: "/plan", label: "Exit Planner" },
+  { path: "/audit", label: "Audit" },
   { path: "/meter", label: "Leak Meter" },
 ];
 
@@ -107,6 +111,8 @@ function Footer(): ReactNode {
 }
 
 const TITLES: Record<string, string> = {
+  "/enter": "Entry Planner",
+  "/audit": "Personal Audit",
   "/check": "Pre-flight Check",
   "/plan": "Exit Planner",
   "/meter": "Leak Meter",
@@ -135,6 +141,12 @@ export function App(): ReactNode {
       break;
     case "/meter":
       page = <MeterPage />;
+      break;
+    case "/enter":
+      page = <EnterPage key={key} />;
+      break;
+    case "/audit":
+      page = <AuditPage key={key} />;
       break;
     default:
       page = <Landing />;

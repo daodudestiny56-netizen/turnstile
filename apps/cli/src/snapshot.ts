@@ -15,7 +15,7 @@ import {
   type AuditRefs,
   type Manifest,
 } from "@turnstile/core";
-import { dayRange, daysBefore } from "@turnstile/ingest";
+import { resolveDayRange } from "@turnstile/ingest";
 import { loadMatchData, type MeterOptions } from "./meter.js";
 
 const kb = (n: number): string => `${(n / 1024).toFixed(0)} KB`;
@@ -28,8 +28,7 @@ const kb = (n: number): string => `${(n / 1024).toFixed(0)} KB`;
 export async function snapshotCommand(opts: MeterOptions & { outDir: string }): Promise<void> {
   const started = performance.now();
   const data = loadMatchData(opts);
-  const from = opts.from ?? (opts.days ? daysBefore(opts.to, Number(opts.days)) : opts.to);
-  const days = dayRange(from, opts.to);
+  const days = resolveDayRange(opts);
 
   const {
     data: snapshot,

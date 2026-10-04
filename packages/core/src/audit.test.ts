@@ -193,12 +193,13 @@ describe("auditAddresses", () => {
     const r = await auditAddresses(ctx, index, [MINE_IN, MINE_OUT_2]);
     const w = r.withdrawals[0]!;
     expect(w.findings[0]!.code).toBe("traced");
-    expect(w.linkedDeposit).toEqual({
-      time: DATA_TO - 4 * DAY,
-      amount: 666_650_000,
-      fromEnteredAddress: false,
-    });
+    // That deposit wasn't made from an entered address: it is described, never shown (PRD P7).
+    expect(w.linkedDeposit).toBeUndefined();
     expect(w.findings[0]!.message).toMatch(/spent together with yours/);
+    const text = JSON.stringify(r);
+    expect(text).not.toContain("666650000");
+    expect(text).not.toContain("6.6665");
+    expect(text).not.toContain(String(DATA_TO - 4 * DAY));
   });
 
   it("says a withdrawal elsewhere is linked to a deposit, without saying which", async () => {
@@ -296,5 +297,12 @@ describe("auditAddresses", () => {
 
   it("splits pasted text on spaces, commas, semicolons and new lines", () => {
     expect(splitAddresses(` a,b;c\n\nd  a\r\ne\t`)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("ignores invisible characters pasted along with an address", async () => {
+    const { ctx, index } = await setup();
+    const r = await auditAddresses(ctx, index, splitAddresses(`\u200b${MINE_IN}\ufeff`));
+    expect(r.addresses[0]!.problem).toBeUndefined();
+    expect(r.addresses[0]!.deposits).toBe(1);
   });
 });

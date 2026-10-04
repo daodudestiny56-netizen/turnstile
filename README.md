@@ -139,7 +139,7 @@ begins. The full plan lives in [PRD.md](PRD.md).
 | S3 | Matcher, scorer, and Leak Meter, validated on planted and real round trips | Done |
 | S4 | Verifiable snapshot: 1.06 MB, reproducible byte for byte, loads in the browser in half a second | Done |
 | S5 | Pre-flight Check, Exit Planner, address-reuse check (CLI), tested on real deposits | Done |
-| S6 | Web app: landing page, check, planner and Leak Meter; now 298 end-to-end tests in Chromium, Firefox and WebKit | Done |
+| S6 | Web app: landing page, check, planner and Leak Meter; now 346 end-to-end tests in Chromium, Firefox and WebKit, including a seeded random-user fuzz test | Done |
 | S7 | NEAR Intents execution: price, one-time deposit address, payment QR and live status for each leg | Done |
 | S8 | Entry Planner and Personal Audit, backtested on mainnet; the Check now warns about timing too | Done, pending sign-off |
 | S9 | Docs, deployment, demo | Planned |
@@ -191,7 +191,7 @@ node apps/cli/dist/bin.js meter --days 90 --to 2026-09-28      # the Leak Meter 
 node apps/cli/dist/bin.js validate --days 90 --to 2026-09-28   # planted trips and natural labels
 node scripts/verify-events.mjs      # checks 20 random events against a public Zcash node
 
-node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-28   # writes data/snapshot/
+node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-29   # writes data/snapshot/ (the shipped bundle)
 node scripts/verify-snapshot.mjs    # verifies it in Node and headless Chromium
 
 # any amount works; 3.1742 is only an example
@@ -204,6 +204,7 @@ node apps/cli/dist/bin.js enter 3.1742          # before depositing: is the amou
 node apps/cli/dist/bin.js audit t1... t1...     # which past withdrawals point back at you
 node scripts/verify-entry.mjs       # backtest of the deposit advice on mainnet
 node scripts/verify-audit.mjs       # audit acceptance checks on real addresses
+node scripts/stress-core.mjs 2000   # thousands of hostile inputs through every function
 
 # one leg through NEAR Intents: a price only (no deposit address) unless you add --live
 node apps/cli/dist/bin.js quote 1 --to usdc-base --recipient 0x... --refund u1...

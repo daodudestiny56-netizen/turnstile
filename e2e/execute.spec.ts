@@ -17,7 +17,14 @@ interface Mock {
 }
 
 /** Stand in for NEAR Intents, recording every call the page makes to it. */
-async function mockIntents(page: Page, overrides: { quoteError?: string } = {}): Promise<Mock> {
+async function mockIntents(
+  page: Page,
+  overrides: {
+    quoteError?: string;
+    /** Change the quote the mock returns, e.g. to test that a tampered quote is refused. */
+    tamper?: (quote: Record<string, unknown>, live: boolean) => void;
+  } = {},
+): Promise<Mock> {
   const mock: Mock = { calls: [], status: "PENDING_DEPOSIT" };
   await page.route(`${API}/**`, async (route: Route) => {
     const url = new URL(route.request().url());
@@ -29,23 +36,32 @@ async function mockIntents(page: Page, overrides: { quoteError?: string } = {}):
       }
       const req = JSON.parse(body!);
       const amountOut = String(Math.round(Number(req.amount) * 13.8));
+      const quote: Record<string, unknown> = {
+        ...(req.dry
+          ? {}
+          : {
+              depositAddress: DEPOSIT,
+              deadline: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+            }),
+        amountIn: req.amount,
+        amountInFormatted: String(Number(req.amount) / 1e8),
+        amountInUsd: "13.8",
+        amountOut,
+        amountOutFormatted: (Number(amountOut) / 1e6).toFixed(6),
+        amountOutUsd: "13.7",
+        minAmountOut: String(Math.round(Number(amountOut) * 0.99)),
+        timeEstimate: 457,
+        refundFee: "32000",
+      };
+      overrides.tamper?.(quote, !req.dry);
       return route.fulfill({
         status: 201,
         json: {
           correlationId: "test",
           timestamp: new Date().toISOString(),
           signature: "ed25519:test",
-          quoteRequest: req,
-          quote: {
-            ...(req.dry ? {} : { depositAddress: DEPOSIT, deadline: "2026-10-05T12:00:00.000Z" }),
-            amountIn: req.amount,
-            amountInFormatted: String(Number(req.amount) / 1e8),
-            amountOut,
-            amountOutFormatted: (Number(amountOut) / 1e6).toFixed(6),
-            amountOutUsd: "0",
-            minAmountOut: String(Math.round(Number(amountOut) * 0.99)),
-            timeEstimate: 457,
-          },
+          quoteRequest: { ...req, appFees: [{ recipient: "fees.near", fee: 20 }] },
+          quote,
         },
       });
     }
@@ -183,6 +199,133 @@ test.describe("Execute through NEAR Intents (mocked)", () => {
     await expect(page.locator("code.address")).toBeVisible();
     const { violations } = await new AxeBuilder({ page }).analyze();
     expect(violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
+  });
+});
+
+test.describe("Execute: what can go wrong with money", () => {
+  async function liveAddress(page: Page): Promise<void> {
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await page.getByRole("button", { name: "Get the deposit address" }).click();
+    await expect(page.locator("code.address")).toHaveText(DEPOSIT);
+  }
+
+  test("the fee NEAR Intents reports is shown with the price", async ({ page }) => {
+    await mockIntents(page);
+    await openExecute(page);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await expect(page.getByText(/NEAR Intents' fee: 0\.20%/)).toBeVisible();
+    await expect(page.getByText(/A refund would cost 0\.00032 ZEC/)).toBeVisible();
+  });
+
+  test("while a deposit address is open, the plan can't change underneath it", async ({ page }) => {
+    await mockIntents(page);
+    await openExecute(page);
+    await liveAddress(page);
+    await expect(page.getByRole("button", { name: "New random schedule" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Make a plan" })).toBeDisabled();
+    await expect(page.getByText(/Close it before changing the plan/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Execute withdrawal 2/ })).toBeDisabled();
+  });
+
+  test("closing an open payment asks first, and offers to save the signed quote", async ({
+    page,
+  }) => {
+    await mockIntents(page);
+    await openExecute(page);
+    await liveAddress(page);
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("alert")).toContainText("A deposit address is open");
+    await page.getByRole("button", { name: "Keep it open" }).click();
+    await expect(page.locator("code.address")).toBeVisible();
+    await page.getByRole("button", { name: "Close" }).click();
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Save and close" }).click();
+    expect((await download).suggestedFilename()).toBe(`turnstile-quote-${DEPOSIT}.json`);
+    await expect(page.locator("code.address")).toHaveCount(0);
+    // With the payment closed, the plan can change again.
+    await expect(page.getByRole("button", { name: "New random schedule" })).toBeEnabled();
+  });
+
+  test("a quote for a different amount is refused, and no payment request is shown", async ({
+    page,
+  }) => {
+    await mockIntents(page, {
+      tamper: (q, live) => {
+        if (live) q.amountIn = String(Number(q.amountIn) * 2);
+      },
+    });
+    await openExecute(page);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await page.getByRole("button", { name: "Get the deposit address" }).click();
+    await expect(page.getByRole("alert")).toContainText("instead of the");
+    await expect(page.locator("code.address")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open in wallet" })).toHaveCount(0);
+  });
+
+  test("a deposit address that isn't a valid Zcash address is refused", async ({ page }) => {
+    await mockIntents(page, {
+      tamper: (q, live) => {
+        if (live) q.depositAddress = "t1TDVLNjs5kq1WBWsGmUuCtfq9R3qD2FNiq"; // one character off
+      },
+    });
+    await openExecute(page);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await page.getByRole("button", { name: "Get the deposit address" }).click();
+    await expect(page.getByRole("alert")).toContainText("Don't pay it");
+    await expect(page.locator("code.address")).toHaveCount(0);
+  });
+
+  test("an expired deposit address hides the payment request", async ({ page }) => {
+    await mockIntents(page, {
+      tamper: (q, live) => {
+        if (live) q.deadline = new Date(Date.now() - 60_000).toISOString();
+      },
+    });
+    await openExecute(page);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await page.getByRole("button", { name: "Get the deposit address" }).click();
+    await expect(page.getByText(/This deposit address expired/)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open in wallet" })).toHaveCount(0);
+    await expect(page.getByRole("img", { name: /Payment request/ })).toHaveCount(0);
+  });
+
+  test("a deposit address can't be created more than a day before the leg", async ({ page }) => {
+    const mock = await mockIntents(page);
+    await openExecute(page, Math.floor(Date.now() / 1000) + 3 * 86_400);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await expect(page.getByText(/You'd receive about/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Get the deposit address" })).toBeDisabled();
+    await expect(page.getByText(/can be created from/)).toBeVisible();
+    expect(mock.calls.filter((c) => c.body?.dry === false)).toEqual([]);
+  });
+
+  test("a big loss to fees is called out before paying", async ({ page }) => {
+    await mockIntents(page, {
+      tamper: (q) => {
+        q.amountOutUsd = "11.0"; // 20% less than the 13.8 going in
+      },
+    });
+    await openExecute(page);
+    await fill(page);
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await expect(page.getByText(/This swap loses about 20% of its value/)).toBeVisible();
+  });
+
+  test("a mistyped EVM address is caught by its checksum, before anything is sent", async ({
+    page,
+  }) => {
+    const mock = await mockIntents(page);
+    await openExecute(page);
+    await fill(page, UA, "0x2527D02599Ba641c19FEa793cD0F167589a0f10d");
+    await page.getByRole("button", { name: "Get a price" }).click();
+    await expect(page.locator("#exec-recipient-error")).toContainText("checksum");
+    expect(mock.calls).toEqual([]);
   });
 });
 

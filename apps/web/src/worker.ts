@@ -32,8 +32,32 @@ let ctx: PreflightContext | undefined;
 let audit: Promise<AuditIndex> | undefined;
 let loadAuditIndex: (() => Promise<AuditIndex>) | undefined;
 
+/** A download that stalls is abandoned after this long, so the page can offer "Try again". */
+const DOWNLOAD_TIMEOUT_MS = 90_000;
+
+async function fetchWithTimeout(url: URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    // Read the body inside the timeout too: a stalled body is as bad as a stalled header.
+    const body = await res.arrayBuffer();
+    return new Response(body, { status: res.status, statusText: res.statusText });
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Downloading ${url.pathname.split("/").pop()} took too long. Check your connection and try again.`,
+        { cause: e },
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchBytes(url: URL): Promise<Uint8Array> {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`Could not load ${url.pathname} (HTTP ${res.status})`);
   return new Uint8Array(await res.arrayBuffer());
 }
@@ -51,7 +75,7 @@ async function init(base: string): Promise<EngineInfo> {
     if (version) url.searchParams.set("v", version.slice(0, 16));
     return url;
   };
-  const manifestRes = await fetch(at("manifest.json"), { cache: "no-cache" });
+  const manifestRes = await fetchWithTimeout(at("manifest.json"), { cache: "no-cache" });
   if (!manifestRes.ok) throw new Error("The data snapshot is missing from this site.");
   const manifest = parseManifest(await manifestRes.text());
   const f = manifest.files;

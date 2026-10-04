@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createPreflightContext,
@@ -17,6 +17,11 @@ import {
 } from "@turnstile/core";
 
 export async function loadBundle(dir: string): Promise<VerifiedSnapshot> {
+  if (!existsSync(join(dir, "manifest.json"))) {
+    throw new Error(
+      `No snapshot at ${dir}. Build one with \`turnstile snapshot\`, or check --snapshot.`,
+    );
+  }
   const read = (name: string): Uint8Array => new Uint8Array(readFileSync(join(dir, name)));
   return loadSnapshot(parseManifest(readFileSync(join(dir, "manifest.json"), "utf8")), {
     snapshot: read("snapshot.bin.gz"),
@@ -30,8 +35,19 @@ export function parseTime(value: string | undefined): number {
   if (value === undefined || value === "now") return Math.floor(Date.now() / 1000);
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms))
-    throw new RangeError(`Invalid time "${value}"; use ISO, e.g. 2026-09-30T14:00Z`);
+  // Date.parse rolls impossible dates over (Sep 31 becomes Oct 1); refuse them instead.
+  const day = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const real =
+    day !== null &&
+    (() => {
+      const [, y, m, d] = day.map(Number) as [number, number, number, number];
+      const date = new Date(Date.UTC(y, m - 1, d));
+      return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+    })();
+  if (Number.isNaN(ms) || !real)
+    throw new RangeError(
+      `Invalid time "${value}"; use a real date in ISO form, e.g. 2026-09-30T14:00Z`,
+    );
   return Math.floor(ms / 1000);
 }
 
@@ -90,6 +106,7 @@ export async function checkCommand(zec: string, opts: CheckOptions): Promise<voi
   const ctx = createPreflightContext(bundle.data, bundle.addresses);
   const time = parseTime(opts.at);
   const own = ownDeposit(opts);
+  if (own && own.time >= time) throw new RangeError("--deposit-at must be before --at");
   printData(ctx, time);
   console.log(
     `Checking a withdrawal of ${formatZat(amount)} ZEC at ${when(time)} UTC` +
@@ -127,6 +144,7 @@ export async function planCommand(zec: string, opts: PlanCommandOptions): Promis
   const ctx = createPreflightContext(bundle.data, bundle.addresses);
   const start = parseTime(opts.start);
   const own = ownDeposit(opts);
+  if (own && own.time >= start) throw new RangeError("--deposit-at must be before --start");
   // A fresh random seed by default: if everyone used the same seed, everyone's legs would land at
   // the same times, which would itself be a fingerprint.
   const seed = opts.seed !== undefined ? Number(opts.seed) : randomInt(1, 2 ** 31);

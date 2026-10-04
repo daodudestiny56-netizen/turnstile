@@ -127,5 +127,9 @@ export function timeField(row: TsvRow, column: string): number {
   if (value === null || value === undefined || !TIME_PATTERN.test(value)) {
     throw new RangeError(`column ${column}: expected "YYYY-MM-DD HH:MM:SS", got ${value}`);
   }
-  return Date.parse(`${value.replace(" ", "T")}Z`) / 1000;
+  const ms = Date.parse(`${value.replace(" ", "T")}Z`);
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 19).replace("T", " ") !== value) {
+    throw new RangeError(`column ${column}: "${value}" is not a real date and time`);
+  }
+  return ms / 1000;
 }

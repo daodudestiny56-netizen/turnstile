@@ -1,4 +1,4 @@
-import { BlockchairDumpSource, RawStore, dayRange, daysBefore } from "@turnstile/ingest";
+import { BlockchairDumpSource, RawStore, resolveDayRange } from "@turnstile/ingest";
 
 export interface IngestOptions {
   from?: string;
@@ -10,8 +10,7 @@ export interface IngestOptions {
 }
 
 export async function ingestCommand(opts: IngestOptions): Promise<void> {
-  const from = opts.from ?? (opts.days ? daysBefore(opts.to, Number(opts.days)) : opts.to);
-  const days = dayRange(from, opts.to);
+  const days = resolveDayRange(opts);
   const source = new BlockchairDumpSource({
     cacheDir: opts.cache,
     onDownload: (url, bytes) =>
@@ -46,7 +45,7 @@ export async function ingestCommand(opts: IngestOptions): Promise<void> {
 }
 
 export function countsCommand(opts: { db: string }): void {
-  const store = new RawStore(opts.db);
+  const store = new RawStore(opts.db, { create: false });
   try {
     const counts = store.dayCounts();
     console.log("day         transactions  inputs  outputs");

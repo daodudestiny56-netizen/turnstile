@@ -4,10 +4,15 @@ import {
   bech32Decode,
   bech32mDecode,
   bech32mEncode,
+  evmAddressProblem,
+  isBitcoinAddress,
+  isNearAccount,
+  isSolanaAddress,
   parseAddress,
   parseRefundAddress,
   toTex,
 } from "./address.js";
+import { keccak256 } from "./keccak.js";
 import { paymentUri } from "./zip321.js";
 
 // Official test vector from ZIP 320.
@@ -122,5 +127,92 @@ describe("ZIP 321 payment requests", () => {
   it("refuses a bad address or amount", () => {
     expect(() => paymentUri("t1 bad", 1)).toThrow(RangeError);
     expect(() => paymentUri(T1, 0)).toThrow(RangeError);
+  });
+});
+
+describe("hostile input", () => {
+  it("rejects absurdly long input at once instead of decoding it", async () => {
+    const started = performance.now();
+    expect((await parseAddress("t1" + "z".repeat(50_000))).kind).toBe("invalid");
+    expect((await parseAddress("u1" + "q".repeat(50_000))).kind).toBe("invalid");
+    expect("problem" in (await parseRefundAddress("t1" + "z".repeat(50_000)))).toBe(true);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  it("ignores zero-width characters pasted with an address", async () => {
+    const t1 = "t1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC";
+    expect((await parseAddress(`\u200b${t1}\u200d\ufeff`)).transparent).toBe(t1);
+  });
+});
+
+describe("addresses on other chains", () => {
+  it("computes Keccak-256 (Ethereum's padding, not SHA3)", () => {
+    const hex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
+    expect(hex(keccak256(new Uint8Array()))).toBe(
+      "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    );
+    expect(hex(keccak256(new TextEncoder().encode("abc")))).toBe(
+      "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+    );
+    // Longer than one 136-byte block.
+    expect(hex(keccak256(new Uint8Array(200).fill(0x61)))).toHaveLength(64);
+  });
+
+  it("checks EIP-55 checksums on mixed-case EVM addresses (the EIP's own vectors)", () => {
+    for (const a of [
+      "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+      "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+      "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+      "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+      "0x52908400098527886e0f7030069857d2e4169ee7",
+      "0x8617E340B3D01FA5F11F306F4090FD50E238070D",
+    ]) {
+      expect(evmAddressProblem(a), a).toBeUndefined();
+    }
+    // One character's case flipped.
+    expect(evmAddressProblem("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD")).toBe("checksum");
+    expect(evmAddressProblem("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAe")).toBe("format");
+  });
+
+  it("validates Bitcoin addresses with their checksums (BIP 173 and BIP 350 vectors)", async () => {
+    for (const a of [
+      "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4",
+      "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+      "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kt5nd6y",
+      "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+      "bc1zw508d6qejxtdg4y5r3zarvaryvaxxpcs", // version 2, Bech32m
+      "BC1SW50QGDZ25J", // version 16
+      "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+      "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+    ]) {
+      expect(await isBitcoinAddress(a), a).toBe(true);
+    }
+    for (const a of [
+      "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5", // checksum
+      "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqh2y7hd", // v1 with Bech32
+      "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P", // v0 with a 16-byte program
+      "bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj", // version 2 with Bech32 (valid before BIP 350)
+      "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3", // Base58Check checksum
+      "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", // testnet
+      "bc1Qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", // mixed case
+    ]) {
+      expect(await isBitcoinAddress(a), a).toBe(false);
+    }
+  });
+
+  it("validates Solana and NEAR recipients", () => {
+    expect(isSolanaAddress("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")).toBe(true);
+    expect(isSolanaAddress("11111111111111111111111111111111")).toBe(true);
+    // Solana has no checksum: only a wrong length or alphabet can be caught.
+    expect(isSolanaAddress("EPjFWdd5AufqSSqeM2qN1xzybapC8G4w")).toBe(false);
+    expect(isSolanaAddress("0PjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")).toBe(false);
+    expect(isNearAccount("kemi.near")).toBe(true);
+    expect(isNearAccount("a1")).toBe(true);
+    expect(isNearAccount("a".repeat(64))).toBe(true);
+    expect(isNearAccount("a")).toBe(false);
+    expect(isNearAccount("a".repeat(65))).toBe(false);
+    expect(isNearAccount("Name.near")).toBe(false);
+    expect(isNearAccount("a..b")).toBe(false);
+    expect(isNearAccount("0".repeat(64))).toBe(true);
   });
 });

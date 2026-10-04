@@ -15,9 +15,14 @@ export {
   IntentsError,
   ONECLICK_BASE_URL,
   OneClickClient,
+  formatUnits,
   legQuoteRequest,
+  quoteFeeBps,
+  quoteMismatch,
 } from "./client.js";
+export { verifyQuote } from "./verify.js";
 export type {
+  AppFee,
   ClientOptions,
   LegQuoteInput,
   Quote,

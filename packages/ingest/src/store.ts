@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { DataSource, TableName, TableRecord } from "./types.js";
@@ -151,8 +151,15 @@ export class RawStore {
   readonly db: DatabaseSync;
   private readonly statements = new Map<string, StatementSync>();
 
-  constructor(path: string) {
+  /**
+   * Open (and with `create`, create) the database. Only ingest creates one: for every other
+   * command a missing file is a mistyped --db, not an empty database.
+   */
+  constructor(path: string, options: { create?: boolean } = { create: true }) {
     if (path !== ":memory:") {
+      if (!options.create && !existsSync(path)) {
+        throw new Error(`No database at ${path}. Run \`turnstile ingest\` first, or check --db.`);
+      }
       mkdirSync(dirname(path), { recursive: true });
     }
     this.db = new DatabaseSync(path);

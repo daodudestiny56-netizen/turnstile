@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createGunzip } from "node:zlib";
@@ -167,7 +167,10 @@ export class BlockchairDumpSource implements DataSource {
           );
         }
         if (!res.ok || !res.body) {
-          throw new Error(`HTTP ${res.status} for ${url}`);
+          const err = new Error(`HTTP ${res.status} for ${url}`);
+          // Client errors other than "busy" won't change on a retry.
+          if (res.status >= 400 && res.status < 500) throw Object.assign(err, { permanent: true });
+          throw err;
         }
         await pipeline(Readable.fromWeb(res.body as never), createWriteStream(part));
         const expected = Number(res.headers.get("content-length"));
@@ -175,12 +178,26 @@ export class BlockchairDumpSource implements DataSource {
         if (expected > 0 && actual !== expected) {
           throw new Error(`Truncated download of ${url}: ${actual} of ${expected} bytes`);
         }
+        // A short response without a Content-Length would otherwise be cached for good.
+        try {
+          await pipeline(
+            createReadStream(part),
+            createGunzip(),
+            new Writable({ write: (_c, _e, cb) => cb() }),
+          );
+        } catch {
+          throw new Error(`Download of ${url} is not a complete gzip file`);
+        }
         await rename(part, path);
         this.options.onDownload?.(url, (await stat(path)).size);
         return path;
       } catch (err) {
         await rm(part, { force: true });
-        if (err instanceof DumpNotFoundError || attempt >= this.attempts) {
+        if (
+          err instanceof DumpNotFoundError ||
+          (err as { permanent?: boolean }).permanent ||
+          attempt >= this.attempts
+        ) {
           throw err;
         }
         await sleep(this.retryDelayMs * 2 ** (attempt - 1));

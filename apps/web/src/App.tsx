@@ -21,6 +21,16 @@ const NAV = [
 function Header({ path }: { path: string }): ReactNode {
   const [theme, toggleTheme] = useTheme();
   const [open, setOpen] = useState(false);
+  // Any navigation (links, back and forward) closes the menu, and so does Escape.
+  useEffect(() => setOpen(false), [path]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
     <header className="site-header">
       <div className="container">
@@ -110,6 +120,27 @@ function Footer(): ReactNode {
   );
 }
 
+function NotFound(): ReactNode {
+  return (
+    <div className="page">
+      <div className="container">
+        <header className="page-head">
+          <span className="eyebrow">Not found</span>
+          <h1>There's no page here</h1>
+          <p className="lead">The link may be mistyped. These are the tools Turnstile has:</p>
+        </header>
+        <ul className="advice">
+          {NAV.map((n) => (
+            <li key={n.path}>
+              <a href={href(n.path)}>{n.label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 const TITLES: Record<string, string> = {
   "/enter": "Entry Planner",
   "/audit": "Personal Audit",
@@ -125,7 +156,9 @@ export function App(): ReactNode {
     const title = TITLES[route.path];
     document.title = title
       ? `${title} | Turnstile`
-      : "Turnstile: leave the shielded pool without a trail";
+      : route.path === "/" || route.path === ""
+        ? "Turnstile: leave the shielded pool without a trail"
+        : "Page not found | Turnstile";
     // After navigating, start keyboard and screen-reader users at the new page's content.
     if (firstRender.current) firstRender.current = false;
     else document.getElementById("main")?.focus({ preventScroll: true });
@@ -148,8 +181,12 @@ export function App(): ReactNode {
     case "/audit":
       page = <AuditPage key={key} />;
       break;
-    default:
+    case "/":
+    case "":
       page = <Landing />;
+      break;
+    default:
+      page = <NotFound />;
   }
   return (
     <>

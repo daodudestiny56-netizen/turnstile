@@ -61,6 +61,11 @@ export async function auditCommand(inputs: string[], opts: AuditOptions): Promis
   const bundle = await loadBundleWithAudit(opts.snapshot);
   const ctx = createPreflightContext(bundle.data, bundle.addresses);
   const r = await auditAddresses(ctx, bundle.audit, addresses);
+  if (r.addresses.every((a) => a.problem)) {
+    throw new RangeError(
+      `None of these can be audited: ${r.addresses.map((a) => `${a.input} (${a.problem})`).join("; ")}`,
+    );
+  }
   printData(ctx, ctx.data.dataTo);
   console.log(`Auditing ${addresses.length} address${addresses.length === 1 ? "" : "es"}`);
   for (const a of r.addresses) {

@@ -167,7 +167,11 @@ export function expectedChanceMatches(
       : [exit.time + params.windowSec, exit.time + params.windowSec + params.backgroundSec];
   const entities = new Set<number>();
   index.forEachInAmountRange(exit.amount, exit.amount + params.feeMaxZat, (s) => {
-    if (s.time > from && s.time <= to && (s.amount - exit.amount) % params.feeUnitZat === 0) {
+    // Forward, the search window includes a shield exactly windowSec before the exit, so the
+    // background stops just short of it; reverse, the window ends where the background starts.
+    const inBackground =
+      direction === "forward" ? s.time > from && s.time < to : s.time > from && s.time <= to;
+    if (inBackground && (s.amount - exit.amount) % params.feeUnitZat === 0) {
       entities.add(s.entity);
     }
   });

@@ -244,5 +244,18 @@ export function decodeSnapshot(bytes: Uint8Array): SnapshotData {
   for (let i = 0; i < nExits; i++) exits[i] = { time: exitTimes[i]!, amount: r.uint() };
 
   if (!r.done) throw new SnapshotFormatError("trailing bytes after snapshot");
+  const MAX_ZAT = 21_000_000 * 100_000_000;
+  const inRange = (t: number): boolean => t >= dataFrom && t < dataTo;
+  if (dataTo <= dataFrom) throw new SnapshotFormatError("snapshot covers no time");
+  for (const s of shields) {
+    if (!inRange(s.time) || s.amount > MAX_ZAT || s.entity > 0x7fffffff) {
+      throw new SnapshotFormatError("snapshot holds a deposit outside its own range");
+    }
+  }
+  for (const e of exits) {
+    if (!inRange(e.time) || e.amount > MAX_ZAT) {
+      throw new SnapshotFormatError("snapshot holds a withdrawal outside its own range");
+    }
+  }
   return { dataFrom, dataTo, shields, services, exits };
 }

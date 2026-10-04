@@ -70,6 +70,35 @@ pnpm e2e --project=chromium   # one browser
 | CORS or the CSP blocks the real API | A real dry quote from the page works in all three browsers | `execute.spec` with `LIVE_INTENTS=1` |
 | The built-in asset list goes stale | Checked against the live token list | `verify-intents.mjs` |
 
+## Money safety (Execute)
+
+| Failure | What happens | Test |
+|---|---|---|
+| The plan changes while a deposit address is open (reshuffle, new plan) | Impossible: re-planning, reshuffling and other legs are disabled until the payment is closed; each plan remounts its panel | `execute.spec` |
+| Closing an open payment loses the swap | Closing asks first and offers "Save and close", which downloads the signed quote | `execute.spec` |
+| NEAR Intents returns a quote for another amount, recipient or refund address | Refused; no address, QR or payment link is shown | `execute.spec`; unit tests |
+| The returned deposit address is not a valid transparent Zcash address | Refused with "Don't pay it" | `execute.spec`; unit tests |
+| The payment link's amount differs from the quote | Can't: the link and QR are built from the verified quote's own amount | `execute.spec` |
+| A response arrives after the inputs changed | Dropped; inputs are disabled while a request is in flight; a double click makes one request | code; `execute.spec` |
+| A deposit address created days early expires before the planned time | Not offered more than a day before the leg; an expired address hides its QR and link | `execute.spec` |
+| A red leg is paid anyway | The deposit address isn't offered for a red leg; a price still is | code |
+| A mistyped recipient | Checksums: EIP-55 for mixed-case EVM, Bech32/Bech32m and Base58Check for Bitcoin; length for Solana and NEAR | `execute.spec`; BIP 173/350 and EIP-55 vectors |
+| Fees are misstated | The fee NEAR Intents reports in each quote is shown, with the refund fee, value in and out, and a warning above a 5% loss | `execute.spec` |
+| A request never answers | Abandoned after 20 s with a clear message; status polling backs off after errors and stops once an unpaid quote expires | unit tests |
+
+## Robustness
+
+| Failure | What happens | Test |
+|---|---|---|
+| A random user types hostile input everywhere, clicks twice, navigates and resizes | No page error, console error or CSP violation; a heading always on screen; no sideways scrolling | `fuzz.spec` (seeded, 80 steps) |
+| An absurdly long pasted address | Refused at once instead of freezing the page or the worker | `robustness.spec`; unit tests |
+| Invisible characters pasted with an address | Removed before checking | unit tests |
+| A mistyped route (`#/Check/`, `#/nowhere`) | Case and trailing slashes are ignored; unknown pages say so and link to the real ones | `robustness.spec` |
+| The phone menu after Back, on Escape, at 400% zoom | Closes on any navigation and on Escape; scrolls when taller than the screen | `robustness.spec` |
+| A download stalls | Abandoned after 90 s with "Try again" | code |
+| The stale-data banner | Hidden while the data is fresh, shown once it is over two days old (tested with a fixed clock) | `robustness.spec` |
+| High-contrast mode | Chart bars and legend swatches keep system colours | CSS |
+
 ## Entry Planner and Personal Audit
 
 | Failure | What happens | Test |
@@ -127,6 +156,12 @@ timeout. `speed.spec` keeps the app itself to a strict budget.
 
 ## Bugs these tests found
 
+- Reshuffling a plan while a deposit address was open made the QR ask for the new leg's amount
+  against a quote for the old one (found in the October 4 review).
+- NEAR Intents' responses were trusted unchecked; the fee shown (0.25%) was not the fee charged
+  (0.20%).
+- A long pasted address froze the page for seconds; a stalled download spun forever.
+- The phone menu stayed open after Back and couldn't reach its last links at 400% zoom.
 - The snapshot was rejected when the host decompressed it in transit (Vite preview, many CDNs).
 - The phone menu button showed on desktop.
 - Deposit fields were squashed inside the form card.

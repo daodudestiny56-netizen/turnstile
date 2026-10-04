@@ -193,6 +193,9 @@ test.describe("Pre-flight Check behavior", () => {
       button.click({ force: true }),
       button.click({ force: true }),
     ]);
+    // Wait until every request has answered, then count: a late response must not add a result.
+    await expect(page.getByRole("button", { name: "Check withdrawal" })).toBeEnabled();
+    await page.waitForTimeout(1_000);
     await expect(page.locator(".verdict")).toHaveCount(1);
     await expect(page.getByRole("alert")).toHaveCount(0);
   });

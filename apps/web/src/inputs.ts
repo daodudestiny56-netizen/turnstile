@@ -7,7 +7,7 @@ export function parseAmountInput(value: string): { zat?: number; error?: string 
   try {
     return { zat: parsePositiveZec(value) };
   } catch (e) {
-    return { error: (e as Error).message.replace(/^Invalid ZEC amount "[^"]*": /, "") };
+    return { error: (e as Error).message.replace(/^Invalid ZEC amount "[\s\S]*": /, "") };
   }
 }
 

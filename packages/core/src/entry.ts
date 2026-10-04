@@ -77,6 +77,9 @@ export function planEntry(ctx: PreflightContext, opts: EntryOptions): EntryAdvic
     );
   }
   const time = opts.time ?? dataTo;
+  if (!Number.isSafeInteger(time) || time <= 0) {
+    throw new PreflightRangeError("the deposit time must be a time in unix seconds");
+  }
   if (time - p.windowSec - p.backgroundSec < dataFrom) {
     throw new PreflightRangeError("the data doesn't reach far enough back before that time");
   }
@@ -174,6 +177,10 @@ export function planEntry(ctx: PreflightContext, opts: EntryOptions): EntryAdvic
         "deposits by others aren't counted.",
     });
   }
+
+  // The verdict is the worst of the reasons, as in the Pre-flight Check (stale data included).
+  const rank = { green: 0, amber: 1, red: 2 } as const;
+  for (const r of reasons) if (rank[r.severity] > rank[verdict]) verdict = r.severity;
 
   return {
     verdict,

@@ -219,6 +219,13 @@ export class EventStore {
   }
 
   /** All derived events on the given days, oldest first, with addresses and tags parsed. */
+  /** Which of these days have been derived (and so have events to load). */
+  derivedDays(days: readonly string[]): Set<string> {
+    const rows = this.db.prepare("SELECT day FROM derive_days").all() as { day: string }[];
+    const wanted = new Set(days);
+    return new Set(rows.map((r) => r.day).filter((d) => wanted.has(d)));
+  }
+
   load(days: readonly string[]): StoredEvent[] {
     const rows = this.db
       .prepare(

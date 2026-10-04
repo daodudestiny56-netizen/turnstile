@@ -18,6 +18,12 @@ export interface QuoteRequest {
   deadline: string;
 }
 
+/** NEAR Intents' fee on a quote, in basis points of the input. */
+export interface AppFee {
+  recipient: string;
+  fee: number;
+}
+
 export interface Quote {
   /** Present on live quotes only: a one-time transparent ZEC address. */
   depositAddress?: string;
@@ -31,7 +37,10 @@ export interface Quote {
   timeEstimate: number;
   /** Live quotes: after this, the deposit address is inactive and funds may be lost. */
   deadline?: string;
+  /** Zatoshi kept from a refund. */
   refundFee?: string;
+  amountInUsd?: string;
+  minAmountIn?: string;
 }
 
 export interface QuoteResponse {
@@ -39,8 +48,49 @@ export interface QuoteResponse {
   timestamp: string;
   /** NEAR Intents' signature over the quote; keep it with the quote to resolve disputes. */
   signature: string;
-  quoteRequest: QuoteRequest;
+  quoteRequest: QuoteRequest & { appFees?: AppFee[] };
   quote: Quote;
+}
+
+/** Total fee NEAR Intents reports for a quote, in basis points (0.20% is 20). */
+export function quoteFeeBps(response: QuoteResponse): number {
+  return (response.quoteRequest.appFees ?? []).reduce((s, f) => s + (Number(f.fee) || 0), 0);
+}
+
+/**
+ * Check that a quote answers the request that was sent: same amount in, recipient, refund address,
+ * origin asset and dry/live mode, and a positive amount out. A quote that doesn't match is never
+ * shown as something to pay. (The destination asset id is not compared: the API may return it in
+ * another notation.)
+ */
+export function quoteMismatch(sent: QuoteRequest, got: QuoteResponse): string | undefined {
+  const r = got?.quoteRequest;
+  const q = got?.quote;
+  if (!r || !q) return "NEAR Intents returned an incomplete quote.";
+  if (q.amountIn !== sent.amount || r.amount !== sent.amount) {
+    return `NEAR Intents quoted ${q.amountIn} zatoshi instead of the ${sent.amount} requested.`;
+  }
+  if (r.recipient !== sent.recipient) return "The quote is for a different recipient.";
+  if (r.refundTo !== sent.refundTo) return "The quote is for a different refund address.";
+  if (r.originAsset !== sent.originAsset) return "The quote is for a different asset.";
+  if (r.dry !== sent.dry) return "The quote is not the kind that was requested.";
+  if (
+    !/^\d+$/.test(q.amountOut ?? "") ||
+    !/^\d+$/.test(q.minAmountOut ?? "") ||
+    BigInt(q.amountOut) <= 0n
+  ) {
+    return "NEAR Intents returned no amount out.";
+  }
+  return undefined;
+}
+
+/** Format an integer number of base units (a decimal string) with `decimals` places, exactly. */
+export function formatUnits(value: string, decimals: number): string {
+  if (!/^\d+$/.test(value)) return value;
+  const padded = value.padStart(decimals + 1, "0");
+  const whole = padded.slice(0, padded.length - decimals).replace(/^0+(?=\d)/, "");
+  const frac = decimals ? padded.slice(padded.length - decimals).replace(/0+$/, "") : "";
+  return frac ? `${whole}.${frac}` : whole;
 }
 
 export type SwapStatus =
@@ -115,33 +165,44 @@ export function legQuoteRequest(input: LegQuoteInput): QuoteRequest {
 export interface ClientOptions {
   baseUrl?: string;
   fetch?: typeof fetch;
+  /** Give up on a request after this long (default 20 s). */
+  timeoutMs?: number;
 }
 
 /**
- * NEAR Intents 1Click API. No API key: a static site can't keep one secret, and without one NEAR
- * Intents adds a 0.25% fee, which the UI discloses.
+ * NEAR Intents 1Click API. No API key: a static site can't keep one secret. Without one NEAR
+ * Intents adds a fee, which each quote reports (quoteFeeBps) and the UI shows with the price.
  */
 export class OneClickClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? ONECLICK_BASE_URL;
     this.fetchImpl = options.fetch ?? ((...args) => fetch(...args));
+    this.timeoutMs = options.timeoutMs ?? 20_000;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     let res: Response;
+    let text: string;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      res = await this.fetchImpl(`${this.baseUrl}${path}`, init);
+      res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, signal: controller.signal });
+      text = await res.text();
     } catch (cause) {
       throw new IntentsError(
-        "Couldn't reach NEAR Intents. Check your connection and try again.",
+        controller.signal.aborted
+          ? "NEAR Intents didn't answer in time. Try again."
+          : "Couldn't reach NEAR Intents. Check your connection and try again.",
         undefined,
         { cause },
       );
+    } finally {
+      clearTimeout(timer);
     }
-    const text = await res.text();
     let body: unknown;
     try {
       body = text ? JSON.parse(text) : undefined;

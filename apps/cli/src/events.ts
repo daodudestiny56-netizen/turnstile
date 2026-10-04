@@ -1,5 +1,5 @@
 import { formatZat } from "@turnstile/core";
-import { EventStore, RawStore, dayRange, daysBefore } from "@turnstile/ingest";
+import { EventStore, RawStore, resolveDayRange } from "@turnstile/ingest";
 
 export interface DayRangeOptions {
   from?: string;
@@ -8,10 +8,7 @@ export interface DayRangeOptions {
   db: string;
 }
 
-function resolveDays(opts: DayRangeOptions): string[] {
-  const from = opts.from ?? (opts.days ? daysBefore(opts.to, Number(opts.days)) : opts.to);
-  return dayRange(from, opts.to);
-}
+const resolveDays = (opts: DayRangeOptions): string[] => resolveDayRange(opts);
 
 function pct(part: number, whole: number): string {
   return whole === 0 ? "0.0%" : `${((100 * part) / whole).toFixed(1)}%`;
@@ -19,8 +16,21 @@ function pct(part: number, whole: number): string {
 
 export function deriveCommand(opts: DayRangeOptions): void {
   const days = resolveDays(opts);
-  const raw = new RawStore(opts.db);
+  const raw = new RawStore(opts.db, { create: false });
   try {
+    // A day with no raw data would be recorded as derived with no events; refuse it instead.
+    const present = new Set(
+      raw
+        .dayCounts(days)
+        .filter((c) => c.transactions > 0)
+        .map((c) => c.day),
+    );
+    const missing = days.filter((d) => !present.has(d));
+    if (missing.length) {
+      throw new Error(
+        `No raw data for ${missing.length} day(s) (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", ..." : ""}). Run \`turnstile ingest\` for them first.`,
+      );
+    }
     const store = new EventStore(raw.db);
     const started = performance.now();
     let shields = 0;
@@ -43,7 +53,7 @@ export function deriveCommand(opts: DayRangeOptions): void {
 
 export function eventsCommand(opts: DayRangeOptions): void {
   const days = resolveDays(opts);
-  const raw = new RawStore(opts.db);
+  const raw = new RawStore(opts.db, { create: false });
   try {
     const { perDay, source, nonEvents } = new EventStore(raw.db).summary(days);
     console.log(

@@ -18,6 +18,10 @@ import { seededRandom } from "./random.js";
 const HOUR = 3_600;
 const DAY = 86_400;
 
+/** Most legs one plan may have, and the longest spread, in hours. */
+export const MAX_LEGS = 12;
+export const MAX_HORIZON_HOURS = 24 * 30;
+
 export interface PlanOptions {
   /** Total zatoshi the user wants to take out. */
   total: number;
@@ -81,8 +85,10 @@ function legTimes(
   activity: number[],
   rand: () => number,
 ): number[] {
-  const from = start + HOUR;
-  const span = Math.max(HOUR, horizonSec - HOUR);
+  // No leg in the first hour (or quarter of a short horizon), and none after the horizon ends.
+  const lead = Math.min(HOUR, horizonSec / 4);
+  const from = start + lead;
+  const span = horizonSec - lead;
   const minGap = Math.max(HOUR, span / (2 * count));
   const peak = Math.max(...activity);
   const times: number[] = [];
@@ -185,6 +191,24 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
   if (!Number.isSafeInteger(opts.total) || opts.total <= 0) {
     throw new RangeError("total must be a positive number of zatoshi");
   }
+  if (!Number.isSafeInteger(opts.start) || opts.start <= 0) {
+    throw new RangeError("start must be a time in unix seconds");
+  }
+  if (
+    !Number.isFinite(opts.horizonHours) ||
+    opts.horizonHours < 1 ||
+    opts.horizonHours > MAX_HORIZON_HOURS
+  ) {
+    throw new RangeError(`spread the legs over 1 to ${MAX_HORIZON_HOURS} hours`);
+  }
+  // linkedSums checks every group of legs, 2^legs of them: keep that small.
+  if (!Number.isInteger(opts.maxLegs) || opts.maxLegs < 1 || opts.maxLegs > MAX_LEGS) {
+    throw new RangeError(`the number of legs must be 1 to ${MAX_LEGS}`);
+  }
+  if (!Number.isInteger(opts.crowdTarget) || opts.crowdTarget < 1) {
+    throw new RangeError("the crowd target must be a whole number of at least 1");
+  }
+  if (!Number.isSafeInteger(opts.seed)) throw new RangeError("seed must be an integer");
   const rand = seededRandom(opts.seed);
   const denominations = measureDenominations(ctx);
   const smallest = Math.min(...denominations.map((d) => d.amount));
@@ -237,18 +261,24 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
     "Send each leg to a different, fresh address that has never deposited into the shielded pool.",
     "If the legs end up at the same address on another chain, they are linked again there.",
   ];
-  if (remainder > 0 && eligible.some((d) => d.amount <= remainder)) {
+  // What the leg limit left out, apart from what was held back so no group of legs adds up.
+  const leftByLimit = remainder - heldBackForSums;
+  if (
+    leftByLimit > 0 &&
+    amounts.length >= opts.maxLegs &&
+    eligible.some((d) => d.amount <= leftByLimit)
+  ) {
     // More legs would fit; the leg limit stopped them.
     const largest = Math.max(...eligible.map((d) => d.amount));
     advice.push(
-      `${formatZat(remainder)} ZEC stays shielded because the plan is limited to ${opts.maxLegs} legs. ` +
+      `${formatZat(leftByLimit)} ZEC stays shielded because the plan is limited to ${opts.maxLegs} legs. ` +
         `The largest amount that blends in right now is ${formatZat(largest)} ZEC, so taking everything ` +
         `out would need about ${Math.ceil(opts.total / largest)} withdrawals: plan another round later, ` +
         `or allow more legs.`,
     );
-  } else if (remainder > 0 && amounts.length > 0) {
+  } else if (leftByLimit > 0 && amounts.length > 0) {
     advice.push(
-      `Keep the remaining ${formatZat(remainder)} ZEC shielded: it's smaller than any amount that blends in.`,
+      `Keep the remaining ${formatZat(leftByLimit)} ZEC shielded: it's smaller than any amount that blends in.`,
     );
   }
   if (heldBackForSums > 0) {

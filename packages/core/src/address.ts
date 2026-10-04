@@ -6,6 +6,8 @@
  * are converted to their t1 form before hashing.
  */
 
+import { keccak256 } from "./keccak.js";
+
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 export const BECH32M_CONST = 0x2bc830a3;
@@ -167,9 +169,23 @@ export interface ParsedAddress {
   problem?: string;
 }
 
+/** Characters that are invisible when pasted (zero-width spaces and joiners, word joiner, BOM). */
+const INVISIBLE = /[\u200b-\u200d\u2060\ufeff]/g;
+
+/** An address as typed or pasted, without surrounding space or invisible characters. */
+export function cleanAddress(input: string): string {
+  return input.replace(INVISIBLE, "").trim();
+}
+
+/** Longer than any Zcash address (a unified address with every receiver is about 300). */
+const MAX_ADDRESS_LENGTH = 512;
+
 /** Classify a destination address and, for transparent ones, verify its checksum. */
 export async function parseAddress(input: string): Promise<ParsedAddress> {
-  const s = input.trim();
+  const s = cleanAddress(input);
+  if (s.length > MAX_ADDRESS_LENGTH) {
+    return { kind: "invalid", problem: "This is far too long to be a Zcash address." };
+  }
   const lower = s.toLowerCase();
   if (/^(zs1|zc|u1)/.test(lower)) {
     return {
@@ -191,6 +207,13 @@ export async function parseAddress(input: string): Promise<ParsedAddress> {
     return { kind: "tex", transparent: await base58CheckEncode(payload) };
   }
   if (/^t[13]/.test(s)) {
+    // t-addresses are 35 characters; anything else can't pass, so don't spend time decoding it.
+    if (s.length < 30 || s.length > 40) {
+      return {
+        kind: "invalid",
+        problem: "This address doesn't pass its checksum: check it for typos.",
+      };
+    }
     const payload = await base58CheckDecode(s);
     const prefix = payload?.slice(0, 2);
     const kind =
@@ -237,7 +260,9 @@ export interface RefundAddress {
 export async function parseRefundAddress(
   input: string,
 ): Promise<RefundAddress | { problem: string }> {
-  const s = input.trim();
+  const s = cleanAddress(input);
+  if (s.length > MAX_ADDRESS_LENGTH)
+    return { problem: "This is far too long to be a Zcash address." };
   const lower = s.toLowerCase();
   if (lower.startsWith("u1")) {
     return bech32Decode(s, BECH32M_CONST)?.hrp === "u"
@@ -254,4 +279,79 @@ export async function parseRefundAddress(
     return { kind: t.kind, shielded: false };
   }
   return { problem: t.problem ?? "Not a Zcash address." };
+}
+
+/* ----- Recipient addresses on other chains (for swaps out of Zcash) ----- */
+
+/**
+ * A Bitcoin mainnet address: SegWit (BIP 173 Bech32 for version 0, BIP 350 Bech32m for versions 1
+ * to 16) or legacy Base58Check P2PKH ("1...") / P2SH ("3...").
+ */
+export async function isBitcoinAddress(input: string): Promise<boolean> {
+  const s = input.trim();
+  if (/^bc1/i.test(s)) {
+    if (s.length > 90 || (s !== s.toLowerCase() && s !== s.toUpperCase())) return false;
+    const lower = s.toLowerCase();
+    const data: number[] = [];
+    for (const ch of lower.slice(3)) {
+      const v = BECH32.indexOf(ch);
+      if (v < 0) return false;
+      data.push(v);
+    }
+    if (data.length < 7) return false;
+    const check = polymod([...hrpExpand("bc"), ...data]);
+    const version = data[0]!;
+    if (version > 16) return false;
+    if (check !== (version === 0 ? 1 : BECH32M_CONST)) return false;
+    const program = convertBits(data.slice(1, -6), 5, 8, false);
+    if (!program || program.length < 2 || program.length > 40) return false;
+    return version !== 0 || program.length === 20 || program.length === 32;
+  }
+  if (!/^[13]/.test(s)) return false;
+  const payload = await base58CheckDecode(s);
+  return (
+    payload !== undefined && payload.length === 21 && (payload[0] === 0x00 || payload[0] === 0x05)
+  );
+}
+
+/** A Solana address: Base58 encoding of a 32-byte public key. */
+export function isSolanaAddress(input: string): boolean {
+  const s = input.trim();
+  if (s.length < 32 || s.length > 44) return false;
+  return base58Decode(s)?.length === 32;
+}
+
+/**
+ * An EVM address: 0x and 40 hex digits. All-lowercase and all-uppercase carry no checksum; mixed
+ * case must match EIP-55, which catches a mistyped character.
+ */
+export function evmAddressProblem(input: string): "format" | "checksum" | undefined {
+  const s = input.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(s)) return "format";
+  const hex = s.slice(2);
+  if (hex === hex.toLowerCase() || hex === hex.toUpperCase()) return undefined;
+  // The checksum hashes the lowercase hex digits as ASCII.
+  const hash = keccak256(Uint8Array.from(hex.toLowerCase(), (c) => c.charCodeAt(0)));
+  for (let i = 0; i < 40; i++) {
+    const nibble = (hash[i >> 1]! >> (i % 2 === 0 ? 4 : 0)) & 0xf;
+    const c = hex[i]!;
+    if (/[a-f]/i.test(c) && (nibble >= 8 ? c !== c.toUpperCase() : c !== c.toLowerCase())) {
+      return "checksum";
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A NEAR account: an implicit account (64 hex digits) or a named one, 2 to 64 characters of
+ * lowercase letters and digits separated by single "-", "_" or ".".
+ */
+export function isNearAccount(input: string): boolean {
+  const s = input.trim();
+  if (/^[0-9a-f]{64}$/.test(s)) return true;
+  return (
+    s.length >= 2 &&
+    s.length <= 64 &&
+    /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(s)
+  );
 }

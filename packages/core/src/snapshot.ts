@@ -41,26 +41,52 @@ const byShield = (a: ShieldPoint, b: ShieldPoint): number =>
   a.time - b.time || a.amount - b.amount || a.entity - b.entity;
 const byExit = (a: ExitQuery, b: ExitQuery): number => a.time - b.time || a.amount - b.amount;
 
+/** Canonical snapshot data plus, for each canonical position, the input index it came from. */
+export interface CanonicalSnapshot {
+  data: SnapshotData;
+  /** shieldFrom[k] = index in the input's shields of canonical shield k. */
+  shieldFrom: number[];
+  /** exitFrom[k] = index in the input's exits of canonical exit k. */
+  exitFrom: number[];
+}
+
 /**
  * Sort everything and renumber entities 0..n-1 by first appearance. Two snapshots of the same events
- * are byte-identical after this, whatever order or entity numbering they arrived with.
+ * are byte-identical after this, whatever order or entity numbering they arrived with. Also reports
+ * where each event moved, so files that refer to events by position can follow them.
  */
-export function canonicalizeSnapshot(data: SnapshotData): SnapshotData {
-  const shields = [...data.shields].sort(byShield);
+export function canonicalizeSnapshotWithOrder(data: SnapshotData): CanonicalSnapshot {
+  const S = data.shields;
+  const first = S.map((_, i) => i).sort((a, b) => byShield(S[a]!, S[b]!));
   // Renumbering can reorder shields that share time and amount, so sort, renumber, sort again.
   const renumber = new Map<number, number>();
-  for (const s of shields) if (!renumber.has(s.entity)) renumber.set(s.entity, renumber.size);
-  const renumbered = shields
-    .map((s) => ({ time: s.time, amount: s.amount, entity: renumber.get(s.entity)! }))
-    .sort(byShield);
+  for (const i of first) if (!renumber.has(S[i]!.entity)) renumber.set(S[i]!.entity, renumber.size);
+  const point = (i: number): ShieldPoint => ({
+    time: S[i]!.time,
+    amount: S[i]!.amount,
+    entity: renumber.get(S[i]!.entity)!,
+  });
+  const shieldFrom = first.sort((a, b) => byShield(point(a), point(b)));
+  const shields = shieldFrom.map(point);
   const services = [
     ...new Set(data.services.filter((e) => renumber.has(e)).map((e) => renumber.get(e)!)),
   ].sort((a, b) => a - b);
-  const exits = data.exits.map((e) => ({ time: e.time, amount: e.amount })).sort(byExit);
-  return { dataFrom: data.dataFrom, dataTo: data.dataTo, shields: renumbered, services, exits };
+  const E = data.exits;
+  const exitFrom = E.map((_, i) => i).sort((a, b) => byExit(E[a]!, E[b]!));
+  const exits = exitFrom.map((i) => ({ time: E[i]!.time, amount: E[i]!.amount }));
+  return {
+    data: { dataFrom: data.dataFrom, dataTo: data.dataTo, shields, services, exits },
+    shieldFrom,
+    exitFrom,
+  };
 }
 
-class Writer {
+export function canonicalizeSnapshot(data: SnapshotData): SnapshotData {
+  return canonicalizeSnapshotWithOrder(data).data;
+}
+
+/** Varint writer shared by the snapshot and audit formats. */
+export class Writer {
   private buf = new Uint8Array(1 << 16);
   private len = 0;
 
@@ -85,12 +111,16 @@ class Writer {
     this.byte(n);
   }
 
+  raw(bytes: Uint8Array): void {
+    for (const b of bytes) this.byte(b);
+  }
+
   bytes(): Uint8Array {
     return this.buf.slice(0, this.len);
   }
 }
 
-class Reader {
+export class Reader {
   private pos = 0;
   constructor(private readonly buf: Uint8Array) {}
 
@@ -110,6 +140,13 @@ class Reader {
       if (scale > Number.MAX_SAFE_INTEGER) throw new SnapshotFormatError("varint too long");
     }
     return n;
+  }
+
+  raw(n: number): Uint8Array {
+    if (this.pos + n > this.buf.length) throw new SnapshotFormatError("snapshot is truncated");
+    const out = this.buf.slice(this.pos, this.pos + n);
+    this.pos += n;
+    return out;
   }
 
   count(what: string): number {

@@ -5,6 +5,7 @@ import { countsCommand, ingestCommand } from "./ingest.js";
 import { meterCommand, validateCommand } from "./meter.js";
 import { snapshotCommand } from "./snapshot.js";
 import { checkCommand, planCommand } from "./preflight.js";
+import { auditCommand, enterCommand } from "./personal.js";
 import { destinationsHelp, quoteCommand, statusCommand } from "./intents.js";
 
 const DEFAULT_SNAPSHOT = "data/snapshot";
@@ -91,6 +92,24 @@ export function buildProgram(): Command {
     .description("Build the public snapshot bundle (snapshot, address hashes, stats, manifest).")
     .option("--out-dir <dir>", "output directory", "data/snapshot")
     .action(snapshotCommand);
+
+  program
+    .command("enter")
+    .description("Entry Planner: deposit into the shielded pool without creating a fingerprint")
+    .argument("<zec>", "amount you're about to deposit (fees included), e.g. 3.1742")
+    .option("--at <time>", "when you plan to deposit: now, or ISO e.g. 2026-09-30T14:00Z", "now")
+    .option("--snapshot <dir>", "verified snapshot bundle", DEFAULT_SNAPSHOT)
+    .action(enterCommand);
+
+  program
+    .command("audit")
+    .description("Personal Audit: which of your past withdrawals could be traced to your deposits?")
+    .argument(
+      "<addresses...>",
+      "your transparent addresses (t1, t3 or tex1); hashed locally, never sent",
+    )
+    .option("--snapshot <dir>", "verified snapshot bundle", DEFAULT_SNAPSHOT)
+    .action(auditCommand);
 
   program
     .command("check")

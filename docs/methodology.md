@@ -283,6 +283,60 @@ An earlier version of this analysis did not separate people from services and di
 gate. It reported that one in five precise-amount exits by people could be traced. That was wrong: most
 of those links pointed at services, and many of the rest were coincidences.
 
+## 8a. Timing, and advice at entry
+
+The matcher only *links* a withdrawal when amount and timing together single out one deposit, and it
+refuses on amounts others use (section 6.3). That keeps wrong links rare, but it is not the same as
+being hidden: an observer can still *guess*. The simplest guess is the matching deposit with the most
+weight, which in practice means the closest in time.
+
+`scripts/verify-entry.mjs` plants 600 deposits of precise amounts, drawn from real person-scale deposits,
+into the real background at random times, and withdraws them three ways. It reports how often the matcher
+links the withdrawal, and how often the observer's single best guess is the planted deposit (seed 2026):
+
+| Withdrawn after | Precise, whole: linked / guessed | Common amount, whole: linked / guessed | Exit Planner legs: linked / guessed |
+|---|---|---|---|
+| 1 hour | 81.7% / 99.8% | 0.0% / 84.9% | 0.0% / 0.0% |
+| 1 day | 71.5% / 96.8% | 0.0% / 10.8% | 0.0% / 0.0% |
+| 3 days | 71.7% / 93.2% | 0.0% / 3.5% | 0.0% / 0.0% |
+
+Of the precise trips, 429 were identifiable by the matcher's own standard (nobody else used the amount in
+the three weeks before the withdrawal), and all 429 were linked after an hour. Three conclusions follow, and
+the tools act on each:
+
+- A precise amount is found whatever you wait. The Entry Planner calls such a deposit a fingerprint.
+- A common amount needs time as well: an hour later, the closest deposit is still yours 85% of the time.
+  The Pre-flight Check and the Personal Audit add an amber "Closest in time" reason when the user's
+  deposit outweighs every other party's by timing, and the Entry Planner tells users to wait at least a day.
+- Exit Planner legs never add up to the deposit, so the deposit is not even a candidate. Depositing
+  everything and leaving through the planner is the first option the Entry Planner offers. It withdrew
+  23% of the balance in its first four legs here; the rest stays shielded for later rounds.
+
+A single common deposit moves less: 8.9% of the balance on average, because few amounts are common on
+mainnet. Under 10 ZEC, only 0.01, 0.02, 0.03, 0.05, 0.1, 1 and 5 ZEC were each deposited by at least 10
+parties in the last week of data. Splitting a balance into several common deposits was tried and dropped:
+deposits from one address belong to one entity, and their sum can be matched against a later withdrawal.
+
+## 8b. Personal Audit
+
+`audit.bin.gz` maps each transparent address, as the same 8-byte domain-separated SHA-256 prefix the reuse
+check uses, to the positions of the deposits it funded and the withdrawals it received in the snapshot. It
+covers 83,922 addresses in 1 MB, is canonical (sorted hashes, delta-coded positions) and reproducible, and is
+pinned in the manifest like every other file.
+
+For each withdrawal to an entered address the audit applies the matcher: *traced* when it is linked to an
+entity that owns one of the entered addresses' deposits, *address reuse* when the receiving address also
+deposited, *singled out* when it is linked to someone else's deposit, and the crowd and closest-in-time
+findings otherwise. For each deposit from an entered address it counts the withdrawals in the following week
+that are linked to that exact deposit.
+
+The audit is a lookup by address, so it is built not to become a way to follow other people's money: details
+(amount, time, the deposit) are shown only for links between entered addresses. A link to an address not
+entered is reported as a count, never as which withdrawal. `scripts/verify-audit.mjs` checks this on 200
+real deposit-only addresses, and checks that the audit agrees with the matcher: of 7,044 same-address round
+trips in the data, every one the matcher links (177 among the addresses with up to 300 events) is reported
+traced.
+
 ## 9. Limitations
 
 - A transaction that both shields and deshields nets out on the transparent side and is under-counted.

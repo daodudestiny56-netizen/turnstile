@@ -46,11 +46,20 @@ export interface Manifest {
   /** First and last UTC day covered, YYYY-MM-DD. */
   fromDay: string;
   toDay: string;
-  counts: { shields: number; entities: number; services: number; exits: number; addresses: number };
+  counts: {
+    shields: number;
+    entities: number;
+    services: number;
+    exits: number;
+    addresses: number;
+    /** Addresses in the audit index (every address that funded a deposit or received a withdrawal). */
+    auditAddresses: number;
+  };
   files: {
     "snapshot.bin.gz": ManifestFile;
     "addresses.bin": ManifestFile;
     "stats.json": ManifestFile;
+    "audit.bin.gz": ManifestFile;
   };
 }
 
@@ -73,7 +82,7 @@ async function expectHash(name: string, bytes: Uint8Array, expected: string): Pr
 export function parseManifest(json: string): Manifest {
   const m = JSON.parse(json) as Manifest;
   if (m.format !== MANIFEST_FORMAT) throw new SnapshotIntegrityError("not a Turnstile manifest");
-  for (const name of ["snapshot.bin.gz", "addresses.bin", "stats.json"] as const) {
+  for (const name of ["snapshot.bin.gz", "addresses.bin", "stats.json", "audit.bin.gz"] as const) {
     if (!m.files?.[name]?.sha256) throw new SnapshotIntegrityError(`manifest lacks ${name}`);
   }
   return m;
@@ -101,26 +110,7 @@ export async function loadSnapshot(
   files: { snapshot: Uint8Array; addresses: Uint8Array; stats: Uint8Array },
 ): Promise<VerifiedSnapshot> {
   const f = manifest.files;
-  const contentHash = f["snapshot.bin.gz"].contentSha256;
-  if (!contentHash) throw new SnapshotIntegrityError("manifest lacks the snapshot content hash");
-
-  let raw: Uint8Array;
-  const received = await sha256Hex(files.snapshot);
-  if (received === f["snapshot.bin.gz"].sha256) {
-    try {
-      raw = await gunzip(files.snapshot);
-    } catch {
-      throw new SnapshotIntegrityError("snapshot.bin.gz does not decompress");
-    }
-    await expectHash("snapshot content", raw, contentHash);
-  } else if (received === contentHash) {
-    raw = files.snapshot; // decompressed in transit
-  } else {
-    throw new SnapshotIntegrityError(
-      `snapshot.bin.gz: SHA-256 ${received} matches neither the manifest's file hash ` +
-        `${f["snapshot.bin.gz"].sha256} nor its content hash ${contentHash}`,
-    );
-  }
+  const raw = await verifyGzipped("snapshot.bin.gz", files.snapshot, f["snapshot.bin.gz"]);
   await expectHash("addresses.bin", files.addresses, f["addresses.bin"].sha256);
   await expectHash("stats.json", files.stats, f["stats.json"].sha256);
 
@@ -143,6 +133,36 @@ export async function loadSnapshot(
   };
 }
 
+/**
+ * Check a gzipped file against its manifest entry and return its content. It may arrive compressed
+ * (must match the file hash, then the content hash) or decompressed in transit by a host that serves
+ * `.gz` with `Content-Encoding: gzip` (must match the content hash).
+ */
+export async function verifyGzipped(
+  name: string,
+  bytes: Uint8Array,
+  entry: ManifestFile,
+): Promise<Uint8Array> {
+  const contentHash = entry.contentSha256;
+  if (!contentHash) throw new SnapshotIntegrityError(`manifest lacks the ${name} content hash`);
+  const received = await sha256Hex(bytes);
+  if (received === entry.sha256) {
+    let raw: Uint8Array;
+    try {
+      raw = await gunzip(bytes);
+    } catch {
+      throw new SnapshotIntegrityError(`${name} does not decompress`);
+    }
+    await expectHash(`${name} content`, raw, contentHash);
+    return raw;
+  }
+  if (received === contentHash) return bytes;
+  throw new SnapshotIntegrityError(
+    `${name}: SHA-256 ${received} matches neither the manifest's file hash ` +
+      `${entry.sha256} nor its content hash ${contentHash}`,
+  );
+}
+
 /** Bytes kept from each address hash: 64 bits, so ~10^5 addresses have no realistic collision. */
 export const ADDRESS_HASH_BYTES = 8;
 const ADDRESS_DOMAIN = "turnstile/address/v1:";
@@ -158,7 +178,7 @@ export async function hashAddress(address: string): Promise<Uint8Array> {
   return digest.slice(0, ADDRESS_HASH_BYTES);
 }
 
-function compareBytes(a: Uint8Array, aOff: number, b: Uint8Array, bOff: number): number {
+export function compareBytes(a: Uint8Array, aOff: number, b: Uint8Array, bOff: number): number {
   for (let i = 0; i < ADDRESS_HASH_BYTES; i++) {
     const d = a[aOff + i]! - b[bOff + i]!;
     if (d !== 0) return d;

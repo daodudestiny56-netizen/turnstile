@@ -42,10 +42,11 @@ function ownDeposit(opts: { deposit?: string; depositAt?: string }): OwnDeposit 
 }
 
 const day = (t: number): string => new Date(t * 1000).toISOString().slice(0, 10);
-const when = (t: number): string => new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ");
-const LABEL = { red: "RED", amber: "AMBER", green: "GREEN" } as const;
+export const when = (t: number): string =>
+  new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ");
+export const LABEL = { red: "RED", amber: "AMBER", green: "GREEN" } as const;
 
-function wrap(text: string, indent: string, width = 96): string {
+export function wrap(text: string, indent: string, width = 96): string {
   const words = text.split(" ");
   const lines: string[] = [];
   let line = "";
@@ -59,7 +60,7 @@ function wrap(text: string, indent: string, width = 96): string {
   return lines.map((l, i) => (i === 0 ? l : indent + l)).join("\n");
 }
 
-function printData(ctx: PreflightContext, time: number): void {
+export function printData(ctx: PreflightContext, time: number): void {
   const ahead = (time - ctx.data.dataTo) / 86_400;
   console.log(
     `Data: ${day(ctx.data.dataFrom)} to ${day(ctx.data.dataTo - 1)}` +

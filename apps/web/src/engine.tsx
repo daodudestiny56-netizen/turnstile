@@ -8,7 +8,14 @@ import {
   type ReactNode,
 } from "react";
 import type { OwnDeposit, PlanOptions, PlannedExit, PreflightResult } from "@turnstile/core";
-import type { EngineInfo, PlanResult, WorkerRequest, WorkerResponse } from "./protocol";
+import type {
+  AuditResult,
+  EngineInfo,
+  EntryAdvice,
+  PlanResult,
+  WorkerRequest,
+  WorkerResponse,
+} from "./protocol";
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
@@ -60,6 +67,19 @@ class Engine {
 
   plan(options: PlanOptions): Promise<PlanResult> {
     return this.call({ type: "plan", options });
+  }
+
+  entry(balance: number, time: number): Promise<EntryAdvice> {
+    return this.call({ type: "entry", balance, time });
+  }
+
+  /** Resolves once the audit index has downloaded and verified; retries a failed download. */
+  auditReady(): Promise<number> {
+    return this.call({ type: "audit-ready" });
+  }
+
+  audit(addresses: string[]): Promise<AuditResult> {
+    return this.call({ type: "audit", addresses });
   }
 
   terminate(): void {

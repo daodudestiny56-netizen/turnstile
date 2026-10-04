@@ -1,9 +1,17 @@
 /**
  * All analysis runs here, off the main thread and on the user's device. The only network activity
- * is the one-time download of the public snapshot, the same files for every visitor.
+ * is the one-time download of the public snapshot, the same files for every visitor. The audit index
+ * follows in the background right after the tools are ready, for every visitor, so downloading it
+ * says nothing about who runs an audit.
  */
 import {
+  auditAddresses,
   createPreflightContext,
+  loadAudit,
+  measureDenominations,
+  planEntry,
+  type AuditIndex,
+  type Manifest,
   loadSnapshot,
   parseManifest,
   planExit,
@@ -21,6 +29,8 @@ const scope = self as unknown as {
 };
 
 let ctx: PreflightContext | undefined;
+let audit: Promise<AuditIndex> | undefined;
+let loadAuditIndex: (() => Promise<AuditIndex>) | undefined;
 
 async function fetchBytes(url: URL): Promise<Uint8Array> {
   const res = await fetch(url);
@@ -58,12 +68,38 @@ async function init(base: string): Promise<EngineInfo> {
   }
   const verified = await loadSnapshot(manifest, { snapshot, addresses, stats });
   ctx = createPreflightContext(verified.data, verified.addresses);
+  const data = verified.data;
+  loadAuditIndex = async (): Promise<AuditIndex> =>
+    loadAudit(
+      manifest as Manifest,
+      await fetchBytes(at("audit.bin.gz", f["audit.bin.gz"].sha256)),
+      data,
+    );
+  // After replying: the common amounts every check and plan needs are computed while the user is
+  // still typing, then the audit index downloads.
+  const warm = ctx;
+  setTimeout(() => {
+    measureDenominations(warm);
+    void startAudit().catch(() => undefined);
+  }, 0);
   return {
     manifest,
     stats: verified.stats as MeterStats,
     dataFrom: verified.data.dataFrom,
     dataTo: verified.data.dataTo,
   };
+}
+
+/** Start (or, after a failure, restart) the background download of the audit index. */
+function startAudit(): Promise<AuditIndex> {
+  if (!loadAuditIndex)
+    return Promise.reject(new Error("The data snapshot hasn't finished loading."));
+  if (!audit) {
+    audit = loadAuditIndex();
+    // A failed download is retried on the next request instead of failing forever.
+    audit.catch(() => (audit = undefined));
+  }
+  return audit;
 }
 
 function ready(): PreflightContext {
@@ -83,6 +119,23 @@ scope.onmessage = async (event) => {
           id: req.id,
           ok: true,
           value: await preflight(ready(), req.exit, req.own),
+        });
+        break;
+      case "entry":
+        scope.postMessage({
+          id: req.id,
+          ok: true,
+          value: planEntry(ready(), { balance: req.balance, time: req.time }),
+        });
+        break;
+      case "audit-ready":
+        scope.postMessage({ id: req.id, ok: true, value: (await startAudit()).size });
+        break;
+      case "audit":
+        scope.postMessage({
+          id: req.id,
+          ok: true,
+          value: await auditAddresses(ready(), await startAudit(), req.addresses),
         });
         break;
       case "plan": {

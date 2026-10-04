@@ -5,7 +5,7 @@ test("after the snapshot loads, a full journey makes no network requests at all"
   page,
   baseURL,
 }) => {
-  const { deposit, reusedTex } = await fixtures();
+  const { deposit, reusedTex, traced } = await fixtures();
   const requests: { phase: string; url: string }[] = [];
   const problems: string[] = [];
   let phase = "loading";
@@ -17,10 +17,23 @@ test("after the snapshot loads, a full journey makes no network requests at all"
   });
   page.on("pageerror", (e) => problems.push(String(e)));
 
-  await page.goto("#/check");
+  await page.goto("#/audit");
   await waitForData(page);
+  // The audit index follows in the background for every visitor; wait for it too.
+  await expect(page.getByRole("button", { name: "Audit addresses" })).toBeEnabled({
+    timeout: 45_000,
+  });
   await page.waitForLoadState("networkidle");
   phase = "using";
+
+  await page.locator("#audit-addresses").fill(traced.address);
+  await page.getByRole("button", { name: "Audit addresses" }).click();
+  await expect(page.locator(".verdict-red")).toBeVisible();
+  await page.getByRole("link", { name: "Entry Planner" }).first().click();
+  await page.locator("#enter-amount").fill("3.17423456");
+  await page.getByRole("button", { name: "Check deposit" }).click();
+  await expect(page.locator(".verdict")).toBeVisible();
+  await page.getByRole("link", { name: "Pre-flight Check" }).first().click();
 
   await fillCheck(page, {
     amount: formatZat(deposit.amount - 30_000),

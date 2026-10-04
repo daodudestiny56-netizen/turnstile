@@ -20,6 +20,13 @@ export interface Fixtures {
   reusedTex: string;
   /** A real transparent address that received a withdrawal but never deposited. */
   freshAddress: string;
+  /**
+   * A real address whose own deposit an observer links to a later withdrawal to the same address,
+   * with that deposit's and withdrawal's amounts (the audit reports it traced).
+   */
+  traced: { address: string; deposit: number; withdrawal: number };
+  /** Entry Planner advice computed independently from the same snapshot, at dataTo - 1 hour. */
+  entry: (zec: string) => core.EntryAdvice;
 }
 
 let cached: Promise<Fixtures> | undefined;
@@ -60,6 +67,32 @@ async function build(): Promise<Fixtures> {
   )
     .flatMap((r) => JSON.parse(r.addresses) as string[])
     .find((a) => a.startsWith("t1") && !shielders.has(a))!;
+
+  // A same-address round trip the matcher links, on an address with little other activity.
+  const audit = await core.loadAudit(manifest, read("audit.bin.gz"), v.data);
+  const scoredFrom = v.data.dataFrom + core.historyNeededSec();
+  let traced: Fixtures["traced"] | undefined;
+  const exitRows = db
+    .prepare(
+      "SELECT time, amount, addresses FROM events WHERE kind = 'DESHIELD' AND tags NOT LIKE '%batch%' AND day BETWEEN ? AND ? ORDER BY time DESC",
+    )
+    .all(...range) as { time: number; amount: number; addresses: string }[];
+  for (const e of exitRows) {
+    if (e.time < scoredFrom) break;
+    const address = (JSON.parse(e.addresses) as string[])[0]!;
+    if (!shielders.has(address)) continue;
+    const refs = await audit.lookup(address);
+    if (refs.shields.length + refs.exits.length > 20) continue;
+    const r = await core.auditAddresses(ctx, audit, [address]);
+    const w = r.withdrawals.find(
+      (x) => x.time === e.time && x.findings.some((f) => f.code === "traced"),
+    );
+    if (w?.linkedDeposit) {
+      traced = { address, deposit: w.linkedDeposit.amount, withdrawal: w.amount };
+      break;
+    }
+  }
+  if (!traced) throw new Error("no traced round trip in the snapshot");
   db.close();
 
   return {
@@ -70,6 +103,9 @@ async function build(): Promise<Fixtures> {
     reusedT1,
     reusedTex: (await core.toTex(reusedT1))!,
     freshAddress,
+    traced,
+    entry: (zec: string) =>
+      core.planEntry(ctx, { balance: core.zecToZat(zec), time: dataTo - 3_600 }),
   };
 }
 

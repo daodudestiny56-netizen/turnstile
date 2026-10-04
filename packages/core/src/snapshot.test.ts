@@ -139,6 +139,7 @@ async function bundle(): Promise<{
       services: data.services.length,
       exits: data.exits.length,
       addresses: 2,
+      auditAddresses: 0,
     },
     files: {
       "snapshot.bin.gz": {
@@ -148,6 +149,7 @@ async function bundle(): Promise<{
       },
       "addresses.bin": { bytes: addresses.length, sha256: await sha256Hex(addresses) },
       "stats.json": { bytes: stats.length, sha256: await sha256Hex(stats) },
+      "audit.bin.gz": { bytes: 0, sha256: "0".repeat(64), contentSha256: "0".repeat(64) },
     },
   };
   return { manifest, files: { snapshot, addresses, stats } };
@@ -208,7 +210,7 @@ describe("loadSnapshot", () => {
       },
     };
     await expect(loadSnapshot(forged, { ...files, snapshot })).rejects.toThrow(
-      /snapshot content: SHA-256/,
+      /snapshot.bin.gz content: SHA-256/,
     );
   });
 

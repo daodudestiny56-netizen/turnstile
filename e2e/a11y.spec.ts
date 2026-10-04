@@ -4,7 +4,9 @@ import { fillCheck, fixtures, waitForData } from "./fixtures";
 
 const ROUTES = [
   ["landing", ""],
+  ["enter", "#/enter"],
   ["check", "#/check"],
+  ["audit", "#/audit"],
   ["plan", "#/plan"],
   ["meter", "#/meter"],
 ] as const;
@@ -61,7 +63,9 @@ test("the whole check can be done with the keyboard alone", async ({ page, brows
 test("every page has its own title", async ({ page }) => {
   for (const [route, title] of [
     ["", /^Turnstile: leave the shielded pool/],
+    ["#/enter", /^Entry Planner \| Turnstile$/],
     ["#/check", /^Pre-flight Check \| Turnstile$/],
+    ["#/audit", /^Personal Audit \| Turnstile$/],
     ["#/plan", /^Exit Planner \| Turnstile$/],
     ["#/meter", /^Leak Meter \| Turnstile$/],
   ] as const) {

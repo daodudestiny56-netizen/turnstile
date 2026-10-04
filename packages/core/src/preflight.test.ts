@@ -82,6 +82,25 @@ describe("preflight", () => {
     });
   });
 
+  it("warns when the user's own deposit is the closest match in time", async () => {
+    // 1 ZEC deposited an hour before withdrawing 1 ZEC: 15 others match, but theirs are 12+ hours old.
+    const soon = await preflight(
+      await context(),
+      { amount: 100_000_000, time: DATA_TO - H },
+      { amount: 100_030_000, time: DATA_TO - 2 * H },
+    );
+    expect(soon.verdict).toBe("amber");
+    expect(soon.reasons.map((x) => x.code)).toEqual(["best-guess", "crowd"]);
+    // Deposited five days before: older than most rivals, so timing doesn't point at it.
+    const later = await preflight(
+      await context(),
+      { amount: 100_000_000, time: DATA_TO - H },
+      { amount: 100_030_000, time: DATA_TO - 5 * DAY },
+    );
+    expect(later.verdict).toBe("green");
+    expect(later.reasons.map((x) => x.code)).toEqual(["crowd"]);
+  });
+
   it("suggests a common amount for a precise one", async () => {
     const r = await preflight(
       await context(),

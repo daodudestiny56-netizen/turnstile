@@ -89,10 +89,10 @@ And during all of this, the network tab shows nothing left my browser."
 | P1 | User inputs (amounts, times, addresses) never leave the device | Playwright test: after snapshot load, a full check+plan issues **zero** network requests |
 | P2 | Every user downloads the identical snapshot file | Snapshot served as a static file; no query params, no per-user variants |
 | P3 | No third-party scripts, fonts, analytics or telemetry | CSP `default-src 'self'`; `connect-src` adds only the 1Click API; build-output grep test |
-| P4 | User addresses (F4/F8) are compared as hashes, locally | Unit test + code review |
+| P4 | User addresses (F4/F8) are compared as hashes, locally; the audit index is downloaded by every visitor, so fetching it reveals nothing | Unit test + `audit.spec` (zero requests while auditing) |
 | P5 | 1Click API sees one leg at a time, only when the user clicks Execute | Integration test: no Intents call before click |
 | P6 | Keys and seed phrases are never requested or handled | No input fields for them; ZIP-321 hand-off only |
-| P7 | Leak Meter publishes aggregates only — no per-tx link lists, no lookup-by-txid | Output schema review |
+| P7 | Leak Meter publishes aggregates only — no per-tx link lists, no lookup-by-txid. The Personal Audit gives details only for links between the addresses the user enters; for any other address it says that a link exists, never where it leads | Output schema review; unit tests; `verify-audit.mjs` (200 real deposit-only addresses) |
 | P8 | Snapshot integrity is verifiable | `manifest.json` with sha256; client verifies before use; rebuild is deterministic |
 
 ## 7. Data
@@ -337,7 +337,23 @@ Labels are computed on the fly and reported as aggregates only (P7).
 - [ ] *Optional, only if someone donates a small amount:* one real leg reaches SUCCESS
 
 ### S8 — Should-ship (conditional)
-Only if S0–S7 are done by Oct 24. F5 Entry Planner and/or F8 Personal Audit, each with its own tests.
+Only if S0–S7 are done by Oct 24 (they were done by Oct 3). F5 Entry Planner and F8 Personal Audit, each with its own tests.
+
+**Build:** core `planEntry` (F5) and `auditAddresses` with the `audit.bin.gz` index (F8): every address, hashed, mapped to the deposits it funded and the withdrawals it received; pinned in the manifest, canonical and reproducible, downloaded by every visitor in the background after the tools are ready. CLI `turnstile enter` and `turnstile audit`; web pages Entry Planner (`#/enter`) and Personal Audit (`#/audit`). Independent checks: `scripts/verify-entry.mjs`, `scripts/verify-audit.mjs`, `e2e/enter.spec.ts`, `e2e/audit.spec.ts`.
+
+**Found while building S8, and fixed in the Pre-flight Check (S5) too:** timing leaks on its own. In the F5 backtest, a withdrawal an hour after a deposit of a *common* amount was the observer's single best guess 84.9% of the time (after a day 10.8%, after three days 3.5%). The matcher rightly refuses to *link* such a withdrawal, but the Check called it green. The Check and the audit now add an amber "Closest in time" reason when the user's own deposit would be the observer's best guess.
+
+**Decision (Oct 3):** the first design recommended up to three common deposits; the backtest showed it moved only 22.8% of balances into the pool, and several deposits from one address can be summed back up. The Entry Planner instead offers (1) deposit everything and leave through the Exit Planner, whose legs never add up to the deposit, and (2) for someone who will withdraw everything at once, one common deposit, plus a waiting rule backed by the measured timing figures.
+
+**Acceptance:**
+- [x] F5 unit tests: unique, thin and common amounts; a common amount never exceeds the balance with its fee; stale data; amounts that can't pay a fee
+- [x] F5 backtest on mainnet (600 planted precise deposits): as-is, identifiable exact round trips linked 100% (429 of 429); with the common amount or the Exit Planner, 0% linked at 1 hour, 1 day and 3 days; best guess after 3 days 3.5% and 0.0%, within 1 in 10
+- [x] F8 index: canonical, byte-identical on rebuild; altered byte refused; 1,000 of 1,000 sampled real deposits and withdrawals found from their address; existing snapshot files unchanged
+- [x] F8 agrees with the matcher on natural labels: 177 of 177 same-address round trips it links are reported traced
+- [x] F8 discloses nothing about other people's money: 200 real deposit-only addresses yield no withdrawal amount, time or address (unit tests check the same for both directions)
+- [x] F8 speed: p95 under 500 ms per address on real data (226 ms on the label sample)
+- [x] Web: both pages in Chromium, Firefox and WebKit; zero requests while auditing; altered audit file refused while the other tools keep working; accessibility; no sideways scrolling at 320 px. Full suite: 298 of 298 e2e tests pass in three browsers (3 live NEAR Intents tests skipped by default)
+- [x] Speed: every tool answers in under 1 s in every browser, measured inside the page (13 to 110 ms); the common amounts are now computed right after the data loads instead of on the first click
 
 ### S9 — Docs, deploy, demo
 **Build:** README (what/why/how-to-run in 3 commands), `docs/methodology.md` (derivation, matcher, null model, limitations, Blockchair finding), `docs/threat-model.md`, `@turnstile/core` README with integration example; production deploy (GitHub Pages or Cloudflare Pages, no analytics); **daily data update**: a scheduled GitHub Actions job that ingests the newest Blockchair day (cached between runs), rebuilds the rolling 90-day snapshot and republishes it; 3-minute demo video following §3's demo moment.

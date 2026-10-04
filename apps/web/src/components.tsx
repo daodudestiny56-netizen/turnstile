@@ -140,6 +140,7 @@ const REASON_TITLES: Record<Reason["code"], string> = {
   "unique-match": "Matches one deposit",
   "address-reuse": "Address reuse",
   "thin-crowd": "Thin crowd",
+  "best-guess": "Closest in time",
   "precise-amount": "Precise amount",
   "stale-data": "Data may be out of date",
   crowd: "Hidden in a crowd",

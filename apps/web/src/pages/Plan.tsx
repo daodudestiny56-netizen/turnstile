@@ -1,4 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  lazy,
+  Suspense,
+} from "react";
 import { planVerdict, type OwnDeposit } from "@turnstile/core";
 import { DataStatus, ReasonList, Tag, VerdictBanner, type Route } from "../components";
 import { useEngine, useLatest } from "../engine";
@@ -6,7 +15,8 @@ import { dateTime, fromLocalInput, nowSec, toLocalInput, zec } from "../format";
 import { Download, Refresh, Route as RouteIcon } from "../icons";
 import { parseAmountInput, useForgetParams } from "../inputs";
 import type { PlanResult } from "../protocol";
-import { ExecutePanel } from "./Execute";
+// Only someone executing a leg needs the swap client and the QR encoder: load them on demand.
+const ExecutePanel = lazy(() => import("./Execute").then((m) => ({ default: m.ExecutePanel })));
 
 /** A fresh random seed per plan, so different people's schedules never line up. */
 function randomSeed(): number {
@@ -24,9 +34,18 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
     const at = Date.parse(route.params.get("depositAt") ?? "");
     return Number.isNaN(at) ? "" : toLocalInput(Math.floor(at / 1000));
   });
-  const [error, setError] = useState<string>();
+  const [errors, setErrors] = useState<{
+    total?: string;
+    start?: string;
+    deposit?: string;
+    depositWhen?: string;
+    form?: string;
+  }>({});
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<PlanResult & { inputs: string }>();
+  const [result, setResult] = useState<PlanResult & { inputs: string; id: number }>();
+  // While a deposit address is open for one of the legs, the plan must not change underneath it.
+  const [liveOpen, setLiveOpen] = useState(false);
+  const planCount = useRef(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const latest = useLatest();
   useForgetParams(route);
@@ -34,25 +53,30 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
 
   const run = async (e?: FormEvent): Promise<void> => {
     e?.preventDefault();
+    if (liveOpen) return;
+    const next: typeof errors = {};
     const t = parseAmountInput(total);
     const startSec = fromLocalInput(start);
     let own: OwnDeposit | undefined;
-    if (t.error) return setError(`Total: ${t.error}`);
-    if (startSec === undefined) return setError("Choose when to start.");
+    if (t.error) next.total = t.error;
+    if (startSec === undefined) next.start = "Choose when to start.";
     if (deposit.trim() || depositWhen) {
       const d = parseAmountInput(deposit);
       const dt = fromLocalInput(depositWhen);
-      if (d.error) return setError(`Deposit: ${d.error}`);
-      if (dt === undefined) return setError("When did you make your deposit?");
-      own = { amount: d.zat!, time: dt };
-      if (dt >= startSec) return setError("Your deposit has to be before the plan starts.");
+      if (d.error) next.deposit = d.error;
+      if (dt === undefined) next.depositWhen = "When did you make your deposit?";
+      else if (startSec !== undefined && dt >= startSec) {
+        next.depositWhen = "Your deposit has to be before the plan starts.";
+      }
+      if (d.zat !== undefined && dt !== undefined) own = { amount: d.zat, time: dt };
     }
-    setError(undefined);
+    setErrors(next);
+    if (Object.keys(next).length || t.zat === undefined || startSec === undefined) return;
     setBusy(true);
     try {
       const { current, value } = await latest(
         engine.plan({
-          total: t.zat!,
+          total: t.zat,
           start: startSec,
           horizonHours: Number(hours),
           maxLegs: Number(legs),
@@ -60,9 +84,9 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
           ...(own ? { own } : {}),
         }),
       );
-      if (current) setResult({ ...value, inputs });
+      if (current) setResult({ ...value, inputs, id: ++planCount.current });
     } catch (err) {
-      setError((err as Error).message);
+      setErrors({ form: (err as Error).message });
       setResult(undefined);
     } finally {
       setBusy(false);
@@ -107,7 +131,14 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
                 placeholder="e.g. 12.75"
                 value={total}
                 onChange={(e) => setTotal(e.target.value)}
+                aria-invalid={errors.total ? true : undefined}
+                aria-describedby={errors.total ? "total-error" : undefined}
               />
+              {errors.total && (
+                <span id="total-error" className="error-text">
+                  {errors.total}
+                </span>
+              )}
             </div>
             <div className="row-2">
               <div className="field">
@@ -118,7 +149,14 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
                   type="datetime-local"
                   value={start}
                   onChange={(e) => setStart(e.target.value)}
+                  aria-invalid={errors.start ? true : undefined}
+                  aria-describedby={errors.start ? "start-error" : undefined}
                 />
+                {errors.start && (
+                  <span id="start-error" className="error-text">
+                    {errors.start}
+                  </span>
+                )}
               </div>
               <div className="field">
                 <label htmlFor="hours">Spread over</label>
@@ -162,7 +200,14 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
                     autoComplete="off"
                     value={deposit}
                     onChange={(e) => setDeposit(e.target.value)}
+                    aria-invalid={errors.deposit ? true : undefined}
+                    aria-describedby={errors.deposit ? "plan-deposit-error" : undefined}
                   />
+                  {errors.deposit && (
+                    <span id="plan-deposit-error" className="error-text">
+                      {errors.deposit}
+                    </span>
+                  )}
                 </div>
                 <div className="field">
                   <label htmlFor="plan-deposit-when">When</label>
@@ -172,27 +217,43 @@ export function PlanPage({ route }: { route: Route }): ReactNode {
                     type="datetime-local"
                     value={depositWhen}
                     onChange={(e) => setDepositWhen(e.target.value)}
+                    aria-invalid={errors.depositWhen ? true : undefined}
+                    aria-describedby={errors.depositWhen ? "plan-deposit-when-error" : undefined}
                   />
+                  {errors.depositWhen && (
+                    <span id="plan-deposit-when-error" className="error-text">
+                      {errors.depositWhen}
+                    </span>
+                  )}
                 </div>
               </div>
             </fieldset>
-            {error && (
+            {errors.form && (
               <p className="error-text" role="alert">
-                {error}
+                {errors.form}
               </p>
             )}
-            <button className="btn btn-primary" type="submit" disabled={!ready || busy}>
+            <button className="btn btn-primary" type="submit" disabled={!ready || busy || liveOpen}>
               {busy ? "Planning..." : "Make a plan"}
             </button>
+            {liveOpen && (
+              <p className="hint" role="status">
+                A deposit address is open for one of the withdrawals. Close it before changing the
+                plan.
+              </p>
+            )}
           </form>
 
           <section aria-live="polite" aria-label="Plan">
             {result ? (
               <PlanView
+                key={result.id}
                 result={result}
                 headingRef={headingRef}
                 outdated={result.inputs !== inputs}
                 onReshuffle={() => void run()}
+                liveOpen={liveOpen}
+                onLiveChange={setLiveOpen}
               />
             ) : (
               <div className="card placeholder">
@@ -212,11 +273,15 @@ function PlanView({
   headingRef,
   outdated,
   onReshuffle,
+  liveOpen,
+  onLiveChange,
 }: {
   result: PlanResult;
   headingRef: RefObject<HTMLHeadingElement | null>;
   outdated: boolean;
   onReshuffle: () => void;
+  liveOpen: boolean;
+  onLiveChange: (live: boolean) => void;
 }): ReactNode {
   const { plan, ics } = result;
   const [executing, setExecuting] = useState<number>();
@@ -280,6 +345,7 @@ function PlanView({
                     className="btn btn-ghost btn-small"
                     aria-label={`Execute withdrawal ${i + 1}: ${zec(leg.amount)}`}
                     aria-expanded={executing === i}
+                    disabled={liveOpen && executing !== i}
                     onClick={() => setExecuting(executing === i ? undefined : i)}
                   >
                     Execute
@@ -331,18 +397,28 @@ function PlanView({
             <Download size={18} /> Calendar reminders (.ics)
           </button>
         )}
-        <button className="btn btn-ghost" type="button" onClick={onReshuffle}>
+        <button className="btn btn-ghost" type="button" onClick={onReshuffle} disabled={liveOpen}>
           <Refresh size={18} /> New random schedule
         </button>
       </div>
       {executing !== undefined && plan.legs[executing] && (
-        <ExecutePanel
-          key={executing}
-          leg={plan.legs[executing]!}
-          index={executing}
-          count={plan.legs.length}
-          onClose={() => setExecuting(undefined)}
-        />
+        <Suspense
+          fallback={
+            <p className="status-banner" role="status">
+              <span className="spinner" aria-hidden="true" />
+              Loading...
+            </p>
+          }
+        >
+          <ExecutePanel
+            key={executing}
+            leg={plan.legs[executing]!}
+            index={executing}
+            count={plan.legs.length}
+            onClose={() => setExecuting(undefined)}
+            onLiveChange={onLiveChange}
+          />
+        </Suspense>
       )}
       <p className="data-note">
         Times are random for each plan so that people using Turnstile don't all withdraw at the same

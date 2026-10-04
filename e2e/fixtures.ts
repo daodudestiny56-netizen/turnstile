@@ -59,14 +59,16 @@ async function build(): Promise<Fixtures> {
         .all(...range) as { addresses: string }[]
     ).flatMap((r) => JSON.parse(r.addresses) as string[]),
   );
-  const reusedT1 = [...shielders].find((a) => a.startsWith("t1"))!;
+  const reusedT1 = [...shielders].find((a) => a.startsWith("t1"));
+  if (!reusedT1) throw new Error("no t1 address that deposited in the snapshot's window");
   const freshAddress = (
     db
       .prepare("SELECT addresses FROM events WHERE kind = 'DESHIELD' AND day BETWEEN ? AND ?")
       .all(...range) as { addresses: string }[]
   )
     .flatMap((r) => JSON.parse(r.addresses) as string[])
-    .find((a) => a.startsWith("t1") && !shielders.has(a))!;
+    .find((a) => a.startsWith("t1") && !shielders.has(a));
+  if (!freshAddress) throw new Error("no t1 address that only received withdrawals");
 
   // A same-address round trip the matcher links, on an address with little other activity.
   const audit = await core.loadAudit(manifest, read("audit.bin.gz"), v.data);

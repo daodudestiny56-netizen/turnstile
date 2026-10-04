@@ -76,6 +76,12 @@ describe("planEntry", () => {
     const r = planEntry(context(), { balance: 312_345_678, time: DATA_TO + 3 * DAY });
     expect(r.data.measuredAt).toBe(DATA_TO);
     expect(r.reasons.map((x) => x.code)).toContain("stale-data");
+    // A common amount is still amber when the data is stale: the verdict is the worst reason.
+    const common = planEntry(context(), {
+      balance: 100_000_000 + SHIELD_FEE_ZAT,
+      time: DATA_TO + 3 * DAY,
+    });
+    expect(common.verdict).toBe("amber");
     const fresh = planEntry(context(), { balance: 312_345_678, time: DATA_TO + DAY });
     expect(fresh.reasons.map((x) => x.code)).not.toContain("stale-data");
   });
@@ -84,6 +90,9 @@ describe("planEntry", () => {
     expect(() => planEntry(context(), { balance: 0 })).toThrow(PreflightRangeError);
     expect(() => planEntry(context(), { balance: 1.5 })).toThrow(PreflightRangeError);
     expect(() => planEntry(context(), { balance: SHIELD_FEE_ZAT })).toThrow(/network fee/);
+    expect(() => planEntry(context(), { balance: 100_000_000, time: NaN })).toThrow(
+      PreflightRangeError,
+    );
     expect(() => planEntry(context(), { balance: 100_000_000, time: T0 + DAY })).toThrow(
       /doesn't reach far enough back/,
     );

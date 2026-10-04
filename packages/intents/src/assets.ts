@@ -1,3 +1,10 @@
+import {
+  evmAddressProblem,
+  isBitcoinAddress,
+  isNearAccount,
+  isSolanaAddress,
+} from "@turnstile/core";
+
 /**
  * Destinations Turnstile offers, with NEAR Intents asset ids. Built in rather than fetched, so the
  * app makes no request to NEAR Intents until the user clicks Execute. `scripts/verify-intents.mjs`
@@ -96,34 +103,43 @@ export function destination(key: string): DestinationAsset {
   return d;
 }
 
-const FORMATS: Record<AddressFormat, { pattern: RegExp; hint: string }> = {
-  evm: {
-    pattern: /^0x[0-9a-fA-F]{40}$/,
-    hint: "an address starting with 0x and 40 hex characters",
-  },
-  solana: {
-    pattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
-    hint: "a Solana address (32 to 44 characters)",
-  },
-  bitcoin: {
-    pattern: /^(bc1[02-9ac-hj-np-z]{11,71}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$/,
-    hint: "a Bitcoin address starting with bc1, 1 or 3",
-  },
-  near: {
-    pattern: /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$|^[0-9a-f]{64}$/,
-    hint: "a NEAR account such as name.near",
-  },
+const HINTS: Record<AddressFormat, string> = {
+  evm: "an address starting with 0x and 40 hex characters",
+  solana: "a Solana address (32 to 44 characters)",
+  bitcoin: "a mainnet Bitcoin address starting with bc1, 1 or 3",
+  near: "a NEAR account such as name.near",
 };
 
 /**
- * A quick format check of a recipient before anything is sent, so obvious mistakes never reach
- * NEAR Intents. NEAR Intents validates the address fully when quoting.
+ * Check a recipient before anything is sent, including its checksum wherever the chain has one
+ * (EIP-55 for mixed-case EVM addresses, Bech32/Bech32m and Base58Check for Bitcoin), so a mistyped
+ * address never reaches NEAR Intents.
  */
-export function recipientProblem(asset: DestinationAsset, recipient: string): string | undefined {
-  const f = FORMATS[asset.addressFormat];
-  return f.pattern.test(recipient.trim())
-    ? undefined
-    : `A ${asset.symbol} on ${asset.chain} recipient should be ${f.hint}.`;
+export async function recipientProblem(
+  asset: DestinationAsset,
+  recipient: string,
+): Promise<string | undefined> {
+  const r = recipient.trim();
+  const wrong = `A ${asset.symbol} on ${asset.chain} recipient should be ${HINTS[asset.addressFormat]}.`;
+  if (r.length > 128) return wrong;
+  switch (asset.addressFormat) {
+    case "evm": {
+      const p = evmAddressProblem(r);
+      if (p === "checksum") {
+        return "This address's capitalisation doesn't match its checksum, so a character is probably mistyped. Copy it again from your wallet.";
+      }
+      return p ? wrong : undefined;
+    }
+    case "solana":
+      return isSolanaAddress(r) ? undefined : wrong;
+    case "bitcoin":
+      if (await isBitcoinAddress(r)) return undefined;
+      return /^(bc1|[13])/i.test(r)
+        ? "This Bitcoin address's checksum doesn't match, so a character is probably mistyped. Copy it again from your wallet."
+        : wrong;
+    case "near":
+      return isNearAccount(r) ? undefined : wrong;
+  }
 }
 
 /**

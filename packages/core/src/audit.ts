@@ -298,7 +298,14 @@ const sameShield = (a: ShieldPoint, b: ShieldPoint): boolean =>
 
 /** Split pasted text into addresses: any mix of spaces, commas, semicolons and new lines. */
 export function splitAddresses(text: string): string[] {
-  return [...new Set(text.split(/[\s,;]+/).filter((s) => s !== ""))];
+  return [
+    ...new Set(
+      text
+        .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")
+        .split(/[\s,;]+/)
+        .filter((s) => s !== ""),
+    ),
+  ];
 }
 
 export class AuditInputError extends Error {
@@ -438,17 +445,18 @@ export async function auditAddresses(
         const s = matchOf(i, score.topEntity);
         const fromEnteredAddress =
           s !== undefined && shieldIdx.some((j) => sameShield(shields[j]!, s));
-        if (s) linkedDeposit = { time: s.time, amount: s.amount, fromEnteredAddress };
+        // Details only for a deposit from an address the user entered (PRD P7); a deposit by an
+        // address merely spent together with theirs is described, not shown.
+        if (s && fromEnteredAddress)
+          linkedDeposit = { time: s.time, amount: s.amount, fromEnteredAddress };
         findings.push({
           code: "traced",
           severity: "red",
           message:
-            (s
-              ? `Linked to ${fromEnteredAddress ? "your" : "a"} deposit of ${zec(s.amount)} on ${date(s.time)}` +
-                (fromEnteredAddress
-                  ? ". "
-                  : ", made from an address spent together with yours (the same owner, as far as the chain shows). ")
-              : "Linked to one of your deposits. ") +
+            (s && fromEnteredAddress
+              ? `Linked to your deposit of ${zec(s.amount)} on ${date(s.time)}. `
+              : "Linked to a deposit made from an address spent together with yours (the same " +
+                "owner, as far as the chain shows). Add that address to see the deposit. ") +
             "Amount and timing single it out; nobody else deposited an amount like it.",
         });
       } else if (score.linkable) {

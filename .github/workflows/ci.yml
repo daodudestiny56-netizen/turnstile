@@ -2,17 +2,28 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The oldest Node the project supports (engines) and the current one.
+        node: ["22.13", "24"]
+    env:
+      # The 90-day data snapshot is built from a local database and isn't in the repository.
+      TURNSTILE_ALLOW_NO_SNAPSHOT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint

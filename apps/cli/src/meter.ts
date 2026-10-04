@@ -18,8 +18,7 @@ import {
 import {
   EventStore,
   RawStore,
-  dayRange,
-  daysBefore,
+  resolveDayRange,
   parseDay,
   type StoredEvent,
 } from "@turnstile/ingest";
@@ -35,9 +34,21 @@ export interface MeterOptions {
 }
 
 function paramsFrom(opts: MeterOptions): MatchParams {
-  return opts.maxChance === undefined
-    ? DEFAULT_MATCH_PARAMS
-    : { ...DEFAULT_MATCH_PARAMS, maxExpectedChance: Number(opts.maxChance) };
+  if (opts.maxChance === undefined) return DEFAULT_MATCH_PARAMS;
+  const maxExpectedChance = Number(opts.maxChance);
+  if (!Number.isFinite(maxExpectedChance) || maxExpectedChance < 0) {
+    throw new RangeError(`--max-chance must be a number of at least 0, got "${opts.maxChance}"`);
+  }
+  return { ...DEFAULT_MATCH_PARAMS, maxExpectedChance };
+}
+
+/** A whole number from min to max, or a clear error naming the option. */
+function wholeNumber(name: string, value: string, min: number, max: number): number {
+  const n = Number(value);
+  if (!/^-?\d+$/.test(value.trim()) || n < min || n > max) {
+    throw new RangeError(`${name} must be a whole number from ${min} to ${max}, got "${value}"`);
+  }
+  return n;
 }
 
 export interface MatchData {
@@ -51,12 +62,20 @@ export interface MatchData {
 }
 
 export function loadMatchData(opts: MeterOptions): MatchData {
-  const from = opts.from ?? (opts.days ? daysBefore(opts.to, Number(opts.days)) : opts.to);
-  const days = dayRange(from, opts.to);
-  const raw = new RawStore(opts.db);
+  const days = resolveDayRange(opts);
+  const raw = new RawStore(opts.db, { create: false });
   let events: StoredEvent[];
   try {
-    events = new EventStore(raw.db).load(days);
+    const store = new EventStore(raw.db);
+    // Never present a range as covered when some of its days were never derived.
+    const derived = store.derivedDays(days);
+    const missing = days.filter((d) => !derived.has(d));
+    if (missing.length) {
+      throw new Error(
+        `${missing.length} of ${days.length} day(s) in the range have no events (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", ..." : ""}). Run \`turnstile ingest\` and \`turnstile derive\` for them first.`,
+      );
+    }
+    events = store.load(days);
   } finally {
     raw.close();
   }
@@ -75,12 +94,12 @@ export function loadMatchData(opts: MeterOptions): MatchData {
     services: serviceEntities(entities),
     exits,
     index: new ShieldIndex(shields),
-    dataFrom: parseDay(from) / 1000,
+    dataFrom: parseDay(days[0]!) / 1000,
     dataTo: parseDay(opts.to) / 1000 + 86_400,
   };
 }
 
-const pct = (r: number): string => `${(100 * r).toFixed(2)}%`;
+const pct = (r: number): string => (Number.isFinite(r) ? `${(100 * r).toFixed(2)}%` : "n/a");
 
 function row(label: string, c: Comparison): string {
   return (
@@ -194,12 +213,18 @@ class OutcomeTally {
 export function validateCommand(opts: MeterOptions & { trips: string; seed: string }): void {
   const data = loadMatchData(opts);
   const params = paramsFrom(opts);
-  const rand = rng(Number(opts.seed));
-  const n = Number(opts.trips);
+  const seed = wholeNumber("--seed", opts.seed, 0, 2 ** 31 - 1);
+  const rand = rng(seed);
+  const n = wholeNumber("--trips", opts.trips, 1, 100_000);
   // Planted trips stand for people, so their amounts come from ordinary users' shields.
   const userAmounts = data.shieldEvents
     .filter((e, i) => !e.tags.includes("coinbase") && !data.services.has(data.shields[i]!.entity))
     .map((e) => e.amount);
+  if (!userAmounts.some((a) => a >= 10_000_000)) {
+    throw new Error(
+      "Not enough ordinary deposits in this range to plant trips; use a longer range.",
+    );
+  }
   const pickAmount = (min = 0): number => {
     for (;;) {
       const x = userAmounts[Math.floor(rand() * userAmounts.length)]!;
@@ -208,6 +233,11 @@ export function validateCommand(opts: MeterOptions & { trips: string; seed: stri
   };
   const lo = data.dataFrom + historyNeededSec(params);
   const hi = data.dataTo - 2 * 86_400;
+  if (hi <= lo) {
+    throw new Error(
+      `validate needs at least ${historyNeededSec(params) / 86_400 + 3} days of data; this range is too short.`,
+    );
+  }
   const pickTime = (): number => Math.floor(lo + rand() * (hi - lo));
   let nextEntity = Math.max(-1, ...data.shields.map((s) => s.entity)) + 1;
   const trip = (t: number, amount: number, exits: PlantedTrip["exits"]): PlantedTrip => ({
@@ -244,7 +274,7 @@ export function validateCommand(opts: MeterOptions & { trips: string; seed: stri
   };
 
   console.log(
-    `Planted trips: ${n} per scenario, seed ${opts.seed}, amounts from ordinary users' shields,\n` +
+    `Planted trips: ${n} per scenario, seed ${seed}, amounts from ordinary users' shields,\n` +
       `placed into the real mainnet background.\n` +
       `"Identifiable": nobody else shielded this amount (plus fees) in the 3 weeks before the exit,\n` +
       `so amount and timing single out the entry. "Crowded": someone else did.\n`,

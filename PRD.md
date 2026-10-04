@@ -355,6 +355,14 @@ Only if S0–S7 are done by Oct 24 (they were done by Oct 3). F5 Entry Planner a
 - [x] Web: both pages in Chromium, Firefox and WebKit; zero requests while auditing; altered audit file refused while the other tools keep working; accessibility; no sideways scrolling at 320 px. Full suite: 298 of 298 e2e tests pass in three browsers (3 live NEAR Intents tests skipped by default)
 - [x] Speed: every tool answers in under 1 s in every browser, measured inside the page (13 to 110 ms); the common amounts are now computed right after the data loads instead of on the first click
 
+### Hardening review (Oct 4, after S8)
+Five independent reviews (core, ingest and CLI, web app, money path, build and tests) and a stress pass. Everything found was fixed, with a test:
+- **Money path:** the payment panel could keep an old deposit address while the plan changed underneath it (QR amount != quoted amount); quotes are now verified against the request and the deposit address checksummed; the plan locks while a payment is open; closing asks first; live addresses only within a day of the leg; expiry hides the QR; real fees shown (0.20%, not 0.25%); recipient checksums (EIP-55, BIP 173/350, Base58Check); request timeouts and polling backoff.
+- **Core:** an own deposit typed with a time-zone slip was counted as a rival (red became amber); planner options are validated (40 legs hung it; a 1-hour horizon placed legs outside it); long or invisible-character addresses rejected at once; audit details withheld for deposits from addresses not entered (P7); denomination cache keyed per index; corrupted data validated.
+- **CLI and ingest:** `validate` hung on an empty range; `snapshot` labelled a 7-day bundle as 90 days; a mistyped `--db` created an empty database; impossible dates and non-numeric options were accepted; a truncated download could be cached forever.
+- **Build:** a build without the snapshot passed and could ship a stale copy (now an error, except in CI); e2e always rebuilds first; e2e code is type-checked; CI runs Node 22.13 and 24; the repository check also rejects invisible and direction-control characters.
+- **Stress:** `scripts/stress-core.mjs` (57,000 hostile calls over five seeds: no crash, hang, NaN or leak) and `e2e/fuzz.spec.ts` (a seeded random user in three browsers).
+
 ### S9 — Docs, deploy, demo
 **Build:** README (what/why/how-to-run in 3 commands), `docs/methodology.md` (derivation, matcher, null model, limitations, Blockchair finding), `docs/threat-model.md`, `@turnstile/core` README with integration example; production deploy (GitHub Pages or Cloudflare Pages, no analytics); **daily data update**: a scheduled GitHub Actions job that ingests the newest Blockchair day (cached between runs), rebuilds the rolling 90-day snapshot and republishes it; 3-minute demo video following §3's demo moment.
 **Acceptance:**

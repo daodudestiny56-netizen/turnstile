@@ -20,13 +20,17 @@ function snapshotBundle(): Plugin {
     buildStart() {
       const from = process.env.TURNSTILE_SNAPSHOT ?? resolve(here, "../../data/snapshot");
       const to = resolve(here, "public/snapshot");
-      if (!existsSync(join(from, "manifest.json"))) {
-        this.warn(
-          `no snapshot at ${from}; run \`turnstile snapshot\` first. The app will show an error.`,
-        );
-        return;
-      }
+      // Never ship whatever an earlier build left behind.
       rmSync(to, { recursive: true, force: true });
+      if (!existsSync(join(from, "manifest.json"))) {
+        const message = `no snapshot at ${from}; run \`turnstile snapshot\` first`;
+        // CI builds the code without the (large, gitignored) data; everything else must have it.
+        if (process.env.TURNSTILE_ALLOW_NO_SNAPSHOT === "1") {
+          this.warn(`${message}. Building without data: the app will show an error.`);
+          return;
+        }
+        this.error(`${message}, or set TURNSTILE_ALLOW_NO_SNAPSHOT=1 to build without data.`);
+      }
       mkdirSync(to, { recursive: true });
       for (const f of SNAPSHOT_FILES) copyFileSync(join(from, f), join(to, f));
     },

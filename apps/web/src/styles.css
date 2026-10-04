@@ -255,6 +255,9 @@ a {
   padding: 8px 0 16px;
   list-style: none;
   margin: 0;
+  /* At high zoom the menu can be taller than the screen; the header is sticky, so it scrolls. */
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
 }
 
 .mobile-menu a {
@@ -1260,11 +1263,15 @@ th {
 }
 
 @media (forced-colors: active) {
-  .bullet-bar {
+  .bullet-bar,
+  .swatch-bar {
     background: CanvasText;
+    forced-color-adjust: none;
   }
-  .bullet-ref {
+  .bullet-ref,
+  .swatch-ref {
     background: Highlight;
+    forced-color-adjust: none;
   }
 }
 
@@ -1499,4 +1506,14 @@ th {
 /* Messages can quote a full address, one long word; let it wrap on narrow screens. */
 .reasons p {
   overflow-wrap: anywhere;
+}
+
+/* A fieldset that only groups inputs (so they can be disabled together), with no frame. */
+.plain-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 20px;
 }

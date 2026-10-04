@@ -71,6 +71,8 @@ export type {
   Verdict,
 } from "./preflight.js";
 export {
+  MAX_HORIZON_HOURS,
+  MAX_LEGS,
   chooseLegs,
   hourlyActivity,
   linkedSums,
@@ -85,12 +87,18 @@ export type { Denomination } from "./denominations.js";
 export {
   bech32mDecode,
   bech32mEncode,
+  cleanAddress,
+  evmAddressProblem,
+  isBitcoinAddress,
+  isNearAccount,
+  isSolanaAddress,
   parseAddress,
   parseRefundAddress,
   toTex,
 } from "./address.js";
 export type { AddressKind, ParsedAddress, RefundAddress } from "./address.js";
 export { paymentUri } from "./zip321.js";
+export { keccak256 } from "./keccak.js";
 export {
   AUDIT_MAX_ADDRESSES,
   AUDIT_MAX_EVENTS,

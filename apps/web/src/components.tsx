@@ -13,7 +13,9 @@ export interface Route {
 
 function readRoute(): Route {
   const hash = window.location.hash.replace(/^#/, "") || "/";
-  const [path = "/", query = ""] = hash.split("?");
+  const [raw = "/", query = ""] = hash.split("?");
+  // "#/Check/" and "#/check" are the same page.
+  const path = raw.toLowerCase().replace(/(.)\/+$/, "$1");
   return { path, params: new URLSearchParams(query) };
 }
 

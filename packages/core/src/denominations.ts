@@ -17,7 +17,8 @@ export interface Denomination {
   crowd: number;
 }
 
-const cache = new WeakMap<SnapshotData, Denomination[]>();
+/** Per index (one per loaded snapshot) and matching parameters. */
+const cache = new WeakMap<ShieldIndex, Map<string, Denomination[]>>();
 
 /**
  * Candidate withdrawal amounts: standard round amounts plus round amounts (at most 2 decimals)
@@ -29,7 +30,10 @@ export function measureDenominations(
   index: ShieldIndex,
   params: MatchParams,
 ): Denomination[] {
-  const cached = cache.get(data);
+  const key = JSON.stringify(params);
+  const perIndex = cache.get(index) ?? new Map<string, Denomination[]>();
+  cache.set(index, perIndex);
+  const cached = perIndex.get(key);
   if (cached) return cached;
   const since = data.dataTo - 30 * DAY;
   const counts = new Map<number, number>();
@@ -46,7 +50,7 @@ export function measureDenominations(
       crowd: feeShapedEntities(index, { time: data.dataTo, amount }, params).size,
     }))
     .sort((a, b) => b.amount - a.amount);
-  cache.set(data, result);
+  perIndex.set(key, result);
   return result;
 }
 

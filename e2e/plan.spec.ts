@@ -14,7 +14,7 @@ async function makePlan(
     await page.locator("#plan-deposit-when").fill(utcInput(input.depositAt));
   await page.getByRole("button", { name: "Make a plan" }).click();
   // Wait for the plan, or for the form to report a problem.
-  await expect(page.locator(".compare, [role=alert]").first()).toBeVisible();
+  await expect(page.locator(".compare, [role=alert], .error-text").first()).toBeVisible();
 }
 
 const legAmounts = async (page: Page): Promise<number[]> =>
@@ -112,11 +112,14 @@ test("a deposit after the plan starts is caught", async ({ page }) => {
     deposit: "3.0003",
     depositAt: dataTo - 3_600,
   });
-  await expect(page.getByRole("alert")).toContainText("before the plan starts");
+  await expect(page.locator("#plan-deposit-when-error")).toContainText("before the plan starts");
+  await expect(page.locator("#plan-deposit-when")).toHaveAttribute("aria-invalid", "true");
 });
 
-test("a bad total is explained", async ({ page }) => {
+test("a bad total is explained under the field", async ({ page }) => {
   await page.locator("#total").fill("1,5");
   await page.getByRole("button", { name: "Make a plan" }).click();
-  await expect(page.getByRole("alert")).toContainText("use a dot for decimals");
+  await expect(page.locator("#total-error")).toContainText("use a dot for decimals");
+  await expect(page.locator("#total")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#total")).toHaveAttribute("aria-describedby", "total-error");
 });

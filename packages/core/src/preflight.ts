@@ -161,6 +161,15 @@ export async function preflight(
   if (!Number.isSafeInteger(exit.amount) || exit.amount <= 0) {
     throw new PreflightRangeError("withdrawal amount must be a positive number of zatoshi");
   }
+  if (!Number.isSafeInteger(exit.time) || exit.time <= 0) {
+    throw new PreflightRangeError("withdrawal time must be a time in unix seconds");
+  }
+  if (own && (!Number.isSafeInteger(own.amount) || own.amount <= 0)) {
+    throw new PreflightRangeError("deposit amount must be a positive number of zatoshi");
+  }
+  if (own && (!Number.isSafeInteger(own.time) || own.time <= 0)) {
+    throw new PreflightRangeError("deposit time must be a time in unix seconds");
+  }
   if (exit.time - historyNeededSec(p) < dataFrom) {
     throw new PreflightRangeError(
       `the data starts ${date(dataFrom)}; a withdrawal needs ${historyNeededSec(p) / DAY} days of history before it`,
@@ -177,12 +186,17 @@ export async function preflight(
     reasons.push({ code, severity, message });
   };
 
-  // If the user's deposit is already in the data, it is them, not a rival.
+  // If the user's deposit is already in the data, it is them, not a rival. Matched by its exact
+  // amount, taking the one closest to the time given, within a day: a time typed in the wrong
+  // time zone must not turn the user into their own rival.
   const ownEntities = new Set<number>();
   if (own) {
+    let closest: { entity: number; gap: number } | undefined;
     ctx.index.forEachInAmountRange(own.amount, own.amount, (s) => {
-      if (Math.abs(s.time - own.time) <= 3_600) ownEntities.add(s.entity);
+      const gap = Math.abs(s.time - own.time);
+      if (gap <= DAY && (!closest || gap < closest.gap)) closest = { entity: s.entity, gap };
     });
+    if (closest) ownEntities.add(closest.entity);
   }
   const candidates = listCandidates(ctx.index, measured, p).filter(
     (c) => !ownEntities.has(c.entity),
@@ -216,6 +230,13 @@ export async function preflight(
         "red",
         `This withdrawal is your deposit of ${zec(own.amount)} on ${date(own.time)} minus fees, and ` +
           `nobody else deposited that amount recently. An observer would link the two.`,
+      );
+    } else if (crowd === 0) {
+      add(
+        "best-guess",
+        "amber",
+        "Your deposit is the only one that matches this withdrawal in the week before. Others " +
+          "often use this amount, so it isn't proof, but an observer's best guess is you.",
       );
     } else if (crowd < CROWD_TARGET) {
       add(

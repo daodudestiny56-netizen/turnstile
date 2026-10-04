@@ -82,6 +82,31 @@ describe("preflight", () => {
     });
   });
 
+  it("recognises the user's deposit even when its time is typed hours off", async () => {
+    // The real deposit is 2 hours before the withdrawal; the user types it 3 hours earlier still
+    // (a time-zone slip). It must not count as somebody else's deposit.
+    const r = await preflight(
+      await context(),
+      { amount: 317_420_000, time: DATA_TO - H },
+      { amount: 317_450_000, time: DATA_TO - 5 * H },
+    );
+    expect(r.crowd).toBe(0);
+    expect(r.verdict).toBe("red");
+    expect(r.reasons[0]?.code).toBe("exact-round-trip");
+  });
+
+  it("refuses times that aren't times", async () => {
+    const ctx = await context();
+    for (const time of [NaN, -1, 1.5, Infinity]) {
+      await expect(preflight(ctx, { amount: 100_000_000, time })).rejects.toThrow(
+        PreflightRangeError,
+      );
+    }
+    await expect(
+      preflight(ctx, { amount: 100_000_000, time: DATA_TO }, { amount: NaN, time: DATA_TO - H }),
+    ).rejects.toThrow(PreflightRangeError);
+  });
+
   it("warns when the user's own deposit is the closest match in time", async () => {
     // 1 ZEC deposited an hour before withdrawing 1 ZEC: 15 others match, but theirs are 12+ hours old.
     const soon = await preflight(
@@ -354,5 +379,43 @@ describe("planExit", () => {
     expect(planVerdict(plan)).toBe("green");
     for (const line of ics.split("\r\n")) expect(line.length).toBeLessThanOrEqual(75);
     expect(ics.replace(/\r\n /g, "")).toContain("has never deposited into the shielded pool.");
+  });
+});
+
+describe("planExit input limits", () => {
+  it("keeps every leg inside a short horizon", async () => {
+    const ctx = await context();
+    for (const horizonHours of [1, 2, 3]) {
+      const plan = await planExit(ctx, {
+        total: 300_000_000,
+        start: DATA_TO,
+        horizonHours,
+        maxLegs: 4,
+        seed: 7,
+      });
+      for (const leg of plan.legs) {
+        expect(leg.time).toBeGreaterThan(DATA_TO);
+        expect(leg.time).toBeLessThanOrEqual(DATA_TO + horizonHours * H);
+      }
+    }
+  });
+
+  it("refuses options that would hang or produce nonsense", async () => {
+    const ctx = await context();
+    const base = { total: 300_000_000, start: DATA_TO, horizonHours: 48, maxLegs: 4, seed: 7 };
+    for (const bad of [
+      { maxLegs: 40 },
+      { maxLegs: 0 },
+      { maxLegs: 2.5 },
+      { horizonHours: NaN },
+      { horizonHours: 0 },
+      { start: NaN },
+      { seed: NaN },
+      { crowdTarget: 0 },
+    ]) {
+      await expect(planExit(ctx, { ...base, ...bad }), JSON.stringify(bad)).rejects.toThrow(
+        RangeError,
+      );
+    }
   });
 });

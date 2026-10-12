@@ -60,7 +60,7 @@ A tool that warns about leaks must not leak. These are hard requirements, and ea
 - **Aggregates only.** The Leak Meter publishes statistics, never a list of which transactions are linked to
   which.
 - **Verifiable data.** Every data file comes with a hash, and anyone can rebuild it from public chain data
-  and get the same bytes. The whole download is about 2 MB, and the app checks every hash before using any
+  and get the same bytes. The whole download is about 2.3 MB, and the app checks every hash before using any
   of it: a single altered byte is rejected.
 
 ## What we've found so far
@@ -112,6 +112,10 @@ The matcher is built to under-claim. It only links an exit when the gap to the e
 of the 5,000-zat fee unit, it counts a service's thousands of deposits as one party, and it refuses to link
 an amount that anyone else used in the previous two weeks. In 3,000 planted round trips it never blamed
 the wrong deposit. The method, calibration and every figure are in [docs/methodology.md](docs/methodology.md).
+
+**The finding holds on newer data.** Re-run on the 90 days to October 11, 2026 (49,660 exits scored):
+services' precise-amount exits are linked 14.2% of the time against 0.05% to 1.0% by chance, and people
+4.4% against 3.9% to 5.1%: services leak, people as a whole show nothing beyond chance.
 
 **Timing leaks on its own.** A common amount hides you from amount matching, not from the clock. In 600
 planted deposits on mainnet, an observer who simply picks the matching deposit closest in time was right:
@@ -191,11 +195,11 @@ node apps/cli/dist/bin.js meter --days 90 --to 2026-09-28      # the Leak Meter 
 node apps/cli/dist/bin.js validate --days 90 --to 2026-09-28   # planted trips and natural labels
 node scripts/verify-events.mjs      # checks 20 random events against a public Zcash node
 
-node apps/cli/dist/bin.js snapshot --days 90 --to 2026-09-29   # writes data/snapshot/ (the shipped bundle)
+node apps/cli/dist/bin.js snapshot --days 90 --to 2026-10-11   # writes data/snapshot/ (the shipped bundle)
 node scripts/verify-snapshot.mjs    # verifies it in Node and headless Chromium
 
 # any amount works; 3.1742 is only an example
-node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-09-29T14:00Z
+node apps/cli/dist/bin.js check 3.1742 --deposit 3.1745 --deposit-at 2026-10-11T14:00Z
 node apps/cli/dist/bin.js check 0.5
 node apps/cli/dist/bin.js plan 3.1742 --hours 48 --ics plan.ics
 node scripts/verify-preflight.mjs   # acceptance checks on real deposits

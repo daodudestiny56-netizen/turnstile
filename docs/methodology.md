@@ -283,6 +283,20 @@ An earlier version of this analysis did not separate people from services and di
 gate. It reported that one in five precise-amount exits by people could be traced. That was wrong: most
 of those links pointed at services, and many of the rest were coincidences.
 
+### 8.1 Re-measured on newer data
+
+The same meter on the 90 days ending October 11, 2026 (July 14 to October 11; 90,569 shields, 89,796
+exits, 49,660 scored):
+
+| Exits traced to | Linked | Chance (reversed) | Chance (shifted) | Beyond chance |
+|---|---|---|---|---|
+| Services, precise amounts (6-8 decimals) | 14.23% | 1.02% | 0.05% | +13.21 points |
+| Services, all amounts | 5.45% | 0.55% | 0.78% | +4.67 points |
+| People | 4.37% | 3.87% | 5.13% | none measurable |
+
+The conclusions are unchanged. The snapshot every visitor downloads is rebuilt for each new data window,
+so the Leak Meter page always shows the window it was built from.
+
 ## 8a. Timing, and advice at entry
 
 The matcher only *links* a withdrawal when amount and timing together single out one deposit, and it
@@ -290,7 +304,7 @@ refuses on amounts others use (section 6.3). That keeps wrong links rare, but it
 being hidden: an observer can still *guess*. The simplest guess is the matching deposit with the most
 weight, which in practice means the closest in time.
 
-`scripts/verify-entry.mjs` plants 600 deposits of precise amounts, drawn from real person-scale deposits,
+`scripts/verify-entry.mjs` (here on the snapshot of July 2 to September 29, 2026) plants 600 deposits of precise amounts, drawn from real person-scale deposits,
 into the real background at random times, and withdraws them three ways. It reports how often the matcher
 links the withdrawal, and how often the observer's single best guess is the planted deposit (seed 2026):
 
@@ -321,7 +335,7 @@ deposits from one address belong to one entity, and their sum can be matched aga
 
 `audit.bin.gz` maps each transparent address, as the same 8-byte domain-separated SHA-256 prefix the reuse
 check uses, to the positions of the deposits it funded and the withdrawals it received in the snapshot. It
-covers 83,922 addresses in 1 MB, is canonical (sorted hashes, delta-coded positions) and reproducible, and is
+covers 83,922 addresses in 1 MB for July 2 to September 29 (91,208 in 1.1 MB for the window ending October 11), is canonical (sorted hashes, delta-coded positions) and reproducible, and is
 pinned in the manifest like every other file.
 
 For each withdrawal to an entered address the audit applies the matcher: *traced* when it is linked to an

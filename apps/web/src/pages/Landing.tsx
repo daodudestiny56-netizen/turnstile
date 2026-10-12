@@ -281,7 +281,7 @@ function Privacy(): ReactNode {
     {
       icon: <Eye />,
       title: "Download everything, ask nothing",
-      body: "Every visitor downloads the same public files, about 2 MB. Your amounts and addresses are compared on your device, so no server can learn them.",
+      body: "Every visitor downloads the same public files, about 2.3 MB. Your amounts and addresses are compared on your device, so no server can learn them.",
     },
     {
       icon: <Lock />,

@@ -19,12 +19,15 @@ const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclud
   .split("\n");
 let hits = 0;
 for (const file of files) {
-  let text;
+  let bytes;
   try {
-    text = readFileSync(file, "utf8");
+    bytes = readFileSync(file);
   } catch {
     continue; // deleted in the working tree but still tracked
   }
+  // Images and other binary files: their bytes can look like anything when read as text.
+  if (bytes.includes(0)) continue;
+  const text = bytes.toString("utf8");
   text.split("\n").forEach((line, i) => {
     if (EMOJI.test(line)) {
       hits++;

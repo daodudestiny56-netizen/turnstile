@@ -290,7 +290,8 @@ describe("planExit", () => {
     expect(plan.withdrawn).toBe(200_000_000);
     const advice = plan.advice.join(" ");
     expect(advice).toMatch(/48 ZEC stays shielded because the plan is limited to 2 legs/);
-    expect(advice).toMatch(/about 50 withdrawals/);
+    // 48 ZEC left, and only 1 ZEC blends in: 48 more withdrawals, not the 50 of the whole total.
+    expect(advice).toMatch(/about 48 more withdrawals/);
     expect(advice).not.toMatch(/smaller than any amount/);
   });
 

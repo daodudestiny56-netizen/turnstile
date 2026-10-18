@@ -55,6 +55,9 @@ function downloadJson(name: string, data: unknown): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** A long address as its first and last characters: enough to recognise, short enough to fit. */
+const shorten = (a: string): string => (a.length > 24 ? `${a.slice(0, 12)}...${a.slice(-8)}` : a);
+
 const usd = (v: string | undefined): number | undefined => {
   const n = Number(v);
   return v !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
@@ -464,11 +467,11 @@ export function ExecutePanel({
             </div>
             <div>
               <dt>At</dt>
-              <dd className="mono">{live.recipient}</dd>
+              <dd className="mono small">{shorten(live.recipient)}</dd>
             </div>
             <div>
               <dt>Refunds to</dt>
-              <dd className="mono">{live.refund}</dd>
+              <dd className="mono small">{shorten(live.refund)}</dd>
             </div>
           </dl>
           {expired ? (

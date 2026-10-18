@@ -270,11 +270,20 @@ export async function planExit(ctx: PreflightContext, options: PlanOptions): Pro
   ) {
     // More legs would fit; the leg limit stopped them.
     const largest = Math.max(...eligible.map((d) => d.amount));
+    // How many more withdrawals the leftover needs, largest blending amounts first.
+    let rest = leftByLimit;
+    let more = 0;
+    for (const d of [...eligible].sort((x, y) => y.amount - x.amount)) {
+      while (d.amount <= rest) {
+        rest -= d.amount;
+        more++;
+      }
+    }
     advice.push(
       `${formatZat(leftByLimit)} ZEC stays shielded because the plan is limited to ${opts.maxLegs} legs. ` +
-        `The largest amount that blends in right now is ${formatZat(largest)} ZEC, so taking everything ` +
-        `out would need about ${Math.ceil(opts.total / largest)} withdrawals: plan another round later, ` +
-        `or allow more legs.`,
+        `Taking it out too would need about ${more} more withdrawal${more === 1 ? "" : "s"} (the largest ` +
+        `amount that blends in right now is ${formatZat(largest)} ZEC): plan another round later, or ` +
+        `allow more legs.`,
     );
   } else if (leftByLimit > 0 && amounts.length > 0) {
     advice.push(

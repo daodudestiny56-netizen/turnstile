@@ -1,0 +1,37 @@
+[
+  {
+    "id": "intro",
+    "caption": "The shielded pool hides you inside. Its doors are public.",
+    "text": "Zcash's shielded pool hides you once you are inside. But every deposit into it, and every withdrawal out of it, is public: the amount, and the time. Turnstile checks whether those two public moments give you away, on your own device, before you make the move."
+  },
+  {
+    "id": "meter",
+    "caption": "Measured on 90 days of Zcash mainnet, ending yesterday.",
+    "text": "We measured it on ninety days of mainnet data, ending yesterday. When a service withdraws a precise amount, about one time in seven it traces straight back to its deposit, against well under one percent by chance. For people as a whole, there is nothing beyond chance. But that average hides the individual."
+  },
+  {
+    "id": "check",
+    "caption": "Pre-flight Check: withdrawing your deposit minus fees is red.",
+    "text": "Kemi deposited 3.1742 ZEC two hours ago, and now wants to take it all out, minus fees. The Pre-flight Check compares that withdrawal against every recent deposit. Nobody else deposited that amount. Red: an observer would link the two, in seconds."
+  },
+  {
+    "id": "plan",
+    "caption": "Exit Planner: common amounts, ordinary times, never adding up to the deposit.",
+    "text": "So Turnstile plans the exit. It splits the withdrawal into amounts that dozens of other people also use, at ordinary hours, and makes sure no group of withdrawals adds back up to her deposit. Each leg hides in a crowd of people using the same amount. What would not blend in stays shielded."
+  },
+  {
+    "id": "execute",
+    "caption": "Each leg is a cross-chain swap through NEAR Intents. No keys, ever.",
+    "text": "Each leg executes as a cross-chain swap through NEAR Intents. Only now, and only for this leg, does anything leave the device. Turnstile verifies the quote against what it asked for, then shows a one-time deposit address and a payment request she pays from her own wallet."
+  },
+  {
+    "id": "entry-audit",
+    "caption": "Entry Planner and Personal Audit: both ends of the trip.",
+    "text": "The same idea works on the way in. The Entry Planner warns before a deposit becomes a fingerprint. And the Personal Audit shows which past withdrawals already point back at you."
+  },
+  {
+    "id": "close",
+    "caption": "Every check runs on your device. Nothing you type is sent.",
+    "text": "Every check runs in the browser, against one public file that every visitor downloads, so no server ever learns what you typed. Turnstile: leave the shielded pool without leaving a trail."
+  }
+]

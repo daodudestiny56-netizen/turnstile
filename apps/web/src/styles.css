@@ -1423,6 +1423,8 @@ th {
 /* ----- Entry Planner and Personal Audit ----- */
 
 .textarea {
+  /* Not the pill shape of single-line inputs: a box several lines tall. */
+  border-radius: var(--radius-sm);
   /* A textarea's default 20 columns would otherwise set the card's minimum width. */
   width: 100%;
   min-width: 0;
@@ -1516,4 +1518,10 @@ th {
   min-width: 0;
   display: grid;
   gap: 20px;
+}
+
+/* Identifiers shown as supporting facts, not as headline numbers. */
+.facts dd.small {
+  font-size: 14px;
+  font-weight: 500;
 }

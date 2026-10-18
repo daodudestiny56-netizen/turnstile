@@ -369,7 +369,7 @@ Five independent reviews (core, ingest and CLI, web app, money path, build and t
 - [ ] Fresh clone on a clean machine → README steps work end to end
 - [ ] Live URL passes the S6 Playwright suite
 - [ ] Daily update job runs on schedule and the live snapshot is never more than 1 day behind Blockchair
-- [ ] Video ≤ 3 min, uploaded, linked in README
+- [x] Video ≤ 3 min, uploaded, linked in README (2:03, recorded from the real app with scripts/demo; [Google Drive](https://drive.google.com/file/d/1SZsk0QYa2x_UxB7f-sISXQbUJLcXjdKL/view))
 
 ### S10 — Submit
 - [ ] Repo made public (rule 03)

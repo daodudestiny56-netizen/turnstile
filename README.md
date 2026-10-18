@@ -8,7 +8,7 @@ leaving your device.
 
 > Built for [Zecathon](https://thezecathon.com/) · Cross-Chain track · TypeScript · MIT
 >
-> **Live:** [turnstile-psi.vercel.app](https://turnstile-psi.vercel.app)
+> **Live:** [turnstile-psi.vercel.app](https://turnstile-psi.vercel.app) · **Demo video (2 min):** [watch](https://drive.google.com/file/d/1SZsk0QYa2x_UxB7f-sISXQbUJLcXjdKL/view)
 
 ---
 

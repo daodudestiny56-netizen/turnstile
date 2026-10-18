@@ -1,0 +1,81 @@
+name: Daily data update
+
+# Every day: fetch the newest published day from Blockchair, rebuild the 90-day snapshot, check it,
+# build the site and deploy it to Vercel. Downloaded files are kept in the Actions cache, so after
+# the first run (about 1.5 hours for 90 days at Blockchair's free speed) each run fetches one day.
+#
+# One-time setup: add a repository secret VERCEL_TOKEN (a token from vercel.com/account/tokens).
+
+on:
+  schedule:
+    - cron: "30 12 * * *" # 12:30 UTC, after Blockchair has published the previous day
+  workflow_dispatch: # "Run workflow" on the Actions tab runs it now
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      # Identify the Vercel project (not secret: they only work together with the token).
+      VERCEL_ORG_ID: team_20yhuEZeV0Je3FZQIA4dn3zt
+      VERCEL_PROJECT_ID: prj_ircbMu6OiZR58qppyQPiVv2yLVcg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc -b
+
+      - name: Restore downloaded Blockchair files
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache/blockchair
+          key: blockchair-${{ github.run_id }}
+          restore-keys: blockchair-
+
+      - name: Find the newest published day
+        id: day
+        run: node scripts/latest-day.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Ingest 90 days (downloads only days not already cached)
+        run: node apps/cli/dist/bin.js ingest --days 90 --to ${{ steps.day.outputs.day }}
+
+      - name: Drop downloads older than 100 days (keeps the cache small)
+        if: always()
+        run: node scripts/prune-cache.mjs data/cache/blockchair 100
+
+      - name: Keep the downloads for the next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache/blockchair
+          key: blockchair-${{ github.run_id }}
+
+      - name: Derive events and build the snapshot
+        run: |
+          node apps/cli/dist/bin.js derive --days 90 --to ${{ steps.day.outputs.day }}
+          node apps/cli/dist/bin.js snapshot --days 90 --to ${{ steps.day.outputs.day }}
+
+      - name: Check the snapshot loads, verifies and answers
+        run: |
+          node apps/cli/dist/bin.js check 1 --at ${{ steps.day.outputs.day }}T12:00Z
+          node apps/cli/dist/bin.js enter 1 --at ${{ steps.day.outputs.day }}T12:00Z
+          node apps/cli/dist/bin.js audit t1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC
+
+      - name: Build the site
+        run: pnpm --filter @turnstile/web build
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes vercel@64 deploy apps/web/dist --prod --yes --token "$VERCEL_TOKEN"

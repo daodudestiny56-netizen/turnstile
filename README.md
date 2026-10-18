@@ -7,6 +7,8 @@ withdrawal gives you away, and plans an exit that blends in with everyone else �
 leaving your device.
 
 > Built for [Zecathon](https://thezecathon.com/) · Cross-Chain track · TypeScript · MIT
+>
+> **Live:** [turnstile-psi.vercel.app](https://turnstile-psi.vercel.app)
 
 ---
 
@@ -166,7 +168,7 @@ What S2 proved, on the same 90 days:
 
 ## Try it
 
-You need Node 22.13 or later and [pnpm](https://pnpm.io/).
+The easiest way is the [live site](https://turnstile-psi.vercel.app). To run everything yourself, you need Node 22.13 or later and [pnpm](https://pnpm.io/).
 
 **Run the web app** (after building a snapshot, below):
 

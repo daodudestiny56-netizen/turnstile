@@ -85,6 +85,11 @@ async function build(): Promise<Fixtures> {
     if (!shielders.has(address)) continue;
     const refs = await audit.lookup(address);
     if (refs.shields.length + refs.exits.length > 20) continue;
+    // Cheap screen first: the matcher must link this withdrawal to one of the address's own
+    // deposits. Only then run the full audit (which scores every crossing of the address).
+    const score = core.scoreExit(ctx.index, { time: e.time, amount: e.amount });
+    const own = new Set(refs.shields.map((k) => v.data.shields[k]!.entity));
+    if (!score.linkable || !own.has(score.topEntity)) continue;
     const r = await core.auditAddresses(ctx, audit, [address]);
     const w = r.withdrawals.find(
       (x) => x.time === e.time && x.findings.some((f) => f.code === "traced"),

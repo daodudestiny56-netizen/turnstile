@@ -49,10 +49,20 @@ test("an absurdly long pasted address is refused at once, without freezing the p
   await page.locator("#amount").fill("1");
   await page.locator("#when").fill(new Date((dataTo - 3_600) * 1000).toISOString().slice(0, 16));
   await page.locator("#destination").fill("t1" + "z".repeat(50_000));
-  const started = Date.now();
-  await page.getByRole("button", { name: "Check withdrawal" }).click();
+  // Timed inside the page, from the click to the error on screen: automation overhead (seconds per
+  // action in WebKit on Windows) must not count, but a page that freezes must fail.
+  const ms = await page.evaluate(async () => {
+    const started = performance.now();
+    document.querySelector<HTMLButtonElement>("form button[type=submit]")!.click();
+    await new Promise<void>((resolve) => {
+      const poll = (): void =>
+        document.getElementById("destination-error") ? resolve() : void requestAnimationFrame(poll);
+      poll();
+    });
+    return performance.now() - started;
+  });
   await expect(page.locator("#destination-error")).toBeVisible();
-  expect(Date.now() - started).toBeLessThan(5_000);
+  expect(ms).toBeLessThan(1_000);
 });
 
 test("the stale-data banner shows only once the data is more than two days old", async ({

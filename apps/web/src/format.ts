@@ -4,13 +4,15 @@ export const zec = (zat: number): string => `${formatZat(zat)} ZEC`;
 
 export const percent = (rate: number, digits = 1): string => `${(100 * rate).toFixed(digits)}%`;
 
-const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+// The data covers whole UTC days, so its dates are shown in UTC: in Lagos (UTC+1) the last second of
+// Oct 16 UTC is already Oct 17 local time.
+const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
 
-/** Unix seconds -> "Sep 29, 2026" in the viewer's locale. */
+/** Unix seconds -> "Sep 29, 2026" in the viewer's locale, as a UTC day. */
 export const day = (t: number): string => dateFmt.format(new Date(t * 1000));
 
 /** Unix seconds -> "Sep 29, 2026, 2:00 PM" in the viewer's time zone. */

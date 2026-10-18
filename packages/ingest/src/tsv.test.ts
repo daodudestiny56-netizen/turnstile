@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TsvFormatError, intField, parseTsv, timeField, totalField } from "./tsv.js";
+import { TsvFormatError, UNKNOWN_TOTAL, intField, parseTsv, timeField, totalField } from "./tsv.js";
 
 async function* lines(...items: string[]): AsyncGenerator<string> {
   yield* items;
@@ -54,7 +54,8 @@ describe("field parsers", () => {
   it("normalizes a null total to 0 only when its count is 0", () => {
     expect(totalField({ t: null, c: "0" }, "t", "c")).toBe(0);
     expect(totalField({ t: "500", c: "2" }, "t", "c")).toBe(500);
-    expect(() => totalField({ t: null, c: "1" }, "t", "c")).toThrow(/null but c is non-zero/);
+    // Blank although there are inputs: unknown, not zero, and not a reason to drop the whole day.
+    expect(totalField({ t: null, c: "1" }, "t", "c")).toBe(UNKNOWN_TOTAL);
   });
 
   it("parses Blockchair UTC timestamps", () => {

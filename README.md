@@ -87,7 +87,9 @@ before any matching was written; the details are in [docs/methodology.md](docs/m
    every checked transaction's outputs add up exactly to its recorded total.
 5. **Blank totals follow one rule.** Across 222,404 transactions checked, `input_total` and `output_total`
    are blank exactly when a transaction has no transparent inputs or outputs, and never otherwise. Turnstile
-   treats those blanks as zero and rejects any other blank as an error.
+   treats those blanks as zero. The first exception appeared on October 17, 2026: one transaction in 7,208
+   with an input but a blank input total. Its amount is unknown, so Turnstile counts it as incomplete
+   rather than guess, and keeps the rest of the day.
 
 ## What the Leak Meter found
 

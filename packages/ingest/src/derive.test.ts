@@ -240,6 +240,12 @@ describe("classifyTx on real transactions", () => {
     expect(classifyTx(tx, { ...context, inputScriptBytes: [] })).toEqual({ kind: "INCOMPLETE" });
     expect(classifyTx(tx, { ...context, outputScriptBytes: [] })).toEqual({ kind: "INCOMPLETE" });
   });
+
+  it("refuses to classify when the source left a total blank (unknown, not zero)", () => {
+    const { tx, context } = REAL.mixedDeshield;
+    expect(classifyTx({ ...tx, inputTotal: -1 }, context)).toEqual({ kind: "INCOMPLETE" });
+    expect(classifyTx({ ...tx, outputTotal: -1 }, context)).toEqual({ kind: "INCOMPLETE" });
+  });
 });
 
 describe("toEvent", () => {

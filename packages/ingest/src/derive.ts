@@ -57,7 +57,7 @@ export type Classification =
   | { kind: "TRANSPARENT"; gap: number }
   /** Shielded components but no transparent value crossing (fully shielded, or fee-only). */
   | { kind: "SHIELDED_ONLY" }
-  /** Some transparent inputs are missing from the data, so structure can't be computed. */
+  /** Some transparent inputs are missing from the data, or a total is unknown, so it can't be computed. */
   | { kind: "INCOMPLETE" };
 
 /** Bitcoin-style CompactSize length prefix. */
@@ -117,7 +117,10 @@ export function classifyTx(
   }
   if (
     context.inputScriptBytes.length !== tx.inputCount ||
-    context.outputScriptBytes.length !== tx.outputCount
+    context.outputScriptBytes.length !== tx.outputCount ||
+    // A total the source left blank (UNKNOWN_TOTAL): the crossing's amount can't be known.
+    tx.inputTotal < 0 ||
+    tx.outputTotal < 0
   ) {
     return { kind: "INCOMPLETE" };
   }

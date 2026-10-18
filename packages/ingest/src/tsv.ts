@@ -80,14 +80,19 @@ export function nullableIntField(row: TsvRow, column: string): number | null {
  * the total exactly when the count is 0 (verified over 222,404 txs, Jul–Sep 2026); that is
  * normalized to 0. A null total with a non-zero count is a data error.
  */
+/**
+ * A total Blockchair left blank although the transaction has inputs or outputs (seen once in 7,208
+ * transactions on 2026-10-17). The value is unknown, so the transaction is classified INCOMPLETE
+ * rather than guessed, and the rest of the day is kept.
+ */
+export const UNKNOWN_TOTAL = -1;
+
 export function totalField(row: TsvRow, totalColumn: string, countColumn: string): number {
   if (row[totalColumn] !== null) {
     return intField(row, totalColumn);
   }
-  if (intField(row, countColumn) !== 0) {
-    throw new RangeError(`column ${totalColumn}: null but ${countColumn} is non-zero`);
-  }
-  return 0;
+  // Blank with no inputs (or outputs) means zero; blank with some means Blockchair didn't know it.
+  return intField(row, countColumn) === 0 ? 0 : UNKNOWN_TOTAL;
 }
 
 const HEX_PATTERN = /^(?:[0-9a-f]{2})*$/i;
